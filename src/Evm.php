@@ -9,12 +9,13 @@ use ItHealer\LaravelEvm\Concerns\Mnemonic;
 use ItHealer\LaravelEvm\Concerns\Network;
 use ItHealer\LaravelEvm\Concerns\Node;
 use ItHealer\LaravelEvm\Concerns\Token;
+use ItHealer\LaravelEvm\Concerns\Transfer;
 use ItHealer\LaravelEvm\Concerns\Wallet;
 use ItHealer\LaravelEvm\Enums\EvmModel;
 
 class Evm
 {
-    use Network, Node, Explorer, Token, Mnemonic, Address, Wallet;
+    use Network, Node, Explorer, Token, Mnemonic, Address, Wallet, Transfer;
 
     /** Standard BIP-44 path used by MetaMask, Trust Wallet and most software wallets. */
     public const PATH_BIP44 = "m/44'/60'/0'/0/{index}";
