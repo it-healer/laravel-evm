@@ -2,11 +2,9 @@
 
 use Brick\Math\BigDecimal;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use ItHealer\LaravelEvm\Models\EvmAddress;
 use ItHealer\LaravelEvm\Models\EvmDeposit;
 use ItHealer\LaravelEvm\Models\EvmNetwork;
 use ItHealer\LaravelEvm\Models\EvmNode;
-use ItHealer\LaravelEvm\Models\EvmToken;
 use ItHealer\LaravelEvm\Models\EvmTransaction;
 use ItHealer\LaravelEvm\Models\EvmWallet;
 
