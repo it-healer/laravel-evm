@@ -19,6 +19,14 @@ class EvmServiceProvider extends PackageServiceProvider
         $package
             ->name('evm')
             ->hasConfigFile()
+            ->hasCommands(
+                NodeSyncCommand::class,
+                ExplorerSyncCommand::class,
+                AddressSyncCommand::class,
+                WalletSyncCommand::class,
+                NetworkSyncCommand::class,
+                EvmSyncCommand::class,
+            )
             ->discoversMigrations()
             ->hasInstallCommand(function (InstallCommand $command) {
                 $command
