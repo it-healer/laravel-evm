@@ -26,11 +26,12 @@
         "spatie/laravel-package-tools": "^1.92.0",
         "brick/math": "*",
         "minter/minter-php-bip-44": "^1.2",
-        "kornrunner/ethereum-address": "^0.3.0",
+        "simplito/elliptic-php": "^1.0",
         "kornrunner/ethereum-offline-raw-tx": "^0.8.0",
         "kornrunner/keccak": "^1.1",
         "kornrunner/rlp": "^0.3.6",
-        "kornrunner/secp256k1": "^0.3.0"
+        "kornrunner/secp256k1": "^0.3.0",
+        "paragonie/ecc": "^2"
     },
     "require-dev": {
         "orchestra/testbench": "^9.0|^10.0|^11.0",

@@ -1,0 +1,150 @@
+{
+  "mnemonic": "test test test test test test test test test test test junk",
+  "seed": "9dfc3c64c2f8bede1533b6a79f8570e5943e0b8fd1cf77107adf7b72cef42185d564a3aee24cab43f80e3c4538087d70fc824eabbad596a23c97b6ee8322ccc0",
+  "signer_private_key": "4646464646464646464646464646464646464646464646464646464646464646",
+  "signer_address": "0x9d8A62f656a8d1615C1294fd71e9CFb3E4855A4F",
+  "derivation": {
+    "bip44": [
+      {
+        "path": "m/44'/60'/0'/0/0",
+        "address": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+        "private_key": "ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
+      },
+      {
+        "path": "m/44'/60'/0'/0/1",
+        "address": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+        "private_key": "59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d"
+      },
+      {
+        "path": "m/44'/60'/0'/0/2",
+        "address": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+        "private_key": "5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a"
+      }
+    ],
+    "ledger_live": [
+      {
+        "path": "m/44'/60'/0'/0/0",
+        "address": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+        "private_key": "ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
+      },
+      {
+        "path": "m/44'/60'/1'/0/0",
+        "address": "0x8C8d35429F74ec245F8Ef2f4Fd1e551cFF97d650",
+        "private_key": "7797c0f3db8b946604ec2039dfd9763e4ffdc53174342a2ed9b14fa3eda666a5"
+      },
+      {
+        "path": "m/44'/60'/2'/0/0",
+        "address": "0x98e503f35D0a019cB0a251aD243a4cCFCF371F46",
+        "private_key": "19d1b9afaf5b1f79f708bd95673df2203213fdbbdafe50e70f056c2fecaa799e"
+      }
+    ],
+    "ledger_legacy": [
+      {
+        "path": "m/44'/60'/0'/0",
+        "address": "0x1e59ce931B4CFea3fe4B875411e280e173cB7A9C",
+        "private_key": "dd23ca549a97cb330b011aebb674730df8b14acaee42d211ab45692699ab8ba5"
+      },
+      {
+        "path": "m/44'/60'/0'/1",
+        "address": "0xc89D42189f0450C2b2c3c61f58Ec5d628176A1E7",
+        "private_key": "f1aa5a7966c3863ccde3047f6a1e266cdc0c76b399e256b8fede92b1c69e4f4e"
+      },
+      {
+        "path": "m/44'/60'/0'/2",
+        "address": "0x318b469BBa396AEc2C60342F9441be36A1945174",
+        "private_key": "43f149de89d64bf9a9099be19e1b1f7a4db784af8fa07caf6f08dc86ba65636b"
+      }
+    ]
+  },
+  "legacy": [
+    {
+      "tx": {
+        "type": 0,
+        "chainId": 1,
+        "nonce": 9,
+        "gasPrice": "20000000000",
+        "gasLimit": "21000",
+        "to": "0x3535353535353535353535353535353535353535",
+        "value": "1000000000000000000",
+        "data": "0x"
+      },
+      "raw": "0xf86c098504a817c800825208943535353535353535353535353535353535353535880de0b6b3a76400008025a028ef61340bd939bc2195fe537567866003e1a15d3c71ff63e1590620aa636276a067cbe9d8997f761aecb703304b3800ccf555c9f3dc64214b297fb1966a3b6d83",
+      "hash": "0x33469b22e9f636356c4160a87eb19df52b7412e8eac32a4a55ffe88ea8350788"
+    },
+    {
+      "tx": {
+        "type": 0,
+        "chainId": 56,
+        "nonce": 0,
+        "gasPrice": "3000000000",
+        "gasLimit": "21000",
+        "to": "0x52908400098527886E0F7030069857D2E4169EE7",
+        "value": "12345678900000000",
+        "data": "0x"
+      },
+      "raw": "0xf86b8084b2d05e008252089452908400098527886e0f7030069857d2e4169ee7872bdc545d587500808193a0b8d6cae2489dead092d971dadeb0c647df46d05485d37c454701c8f05e857ae4a020328a8086c6e196018aa1820954234138b732bceabca0b9257c1a8e97808167",
+      "hash": "0xf3d0e93ae28d83c46a0fb44d5bd2eb8c72e79ef380aef37dcad2bcc7e8a4c373"
+    },
+    {
+      "tx": {
+        "type": 0,
+        "chainId": 137,
+        "nonce": 42,
+        "gasPrice": "31000000007",
+        "gasLimit": "65000",
+        "to": "0xc2132D05D31c914a87C6611C10748AEb04B58e8F",
+        "value": "0",
+        "data": "0xa9059cbb000000000000000000000000de709f2102306220921060314715629080e2fb770000000000000000000000000000000000000000000000000000000005f5e100"
+      },
+      "raw": "0xf8ab2a850737be760782fde894c2132d05d31c914a87c6611c10748aeb04b58e8f80b844a9059cbb000000000000000000000000de709f2102306220921060314715629080e2fb770000000000000000000000000000000000000000000000000000000005f5e100820135a07c9207d194e9973832b19ad0a458c1f5a71f9fe4f740ac8146924776cadfce6ea02292a433e746532526db4f1ce3fd1ee84bc36be4eee72ffdd3b8d18686b01756",
+      "hash": "0x5805a99d5e375d2a87bb32c29071d566d5baa9ddab7a09a5eeed2116e6565efe"
+    }
+  ],
+  "eip1559": [
+    {
+      "tx": {
+        "type": 2,
+        "chainId": 1,
+        "nonce": 0,
+        "maxPriorityFeePerGas": "1500000000",
+        "maxFeePerGas": "30000000000",
+        "gasLimit": "21000",
+        "to": "0x3535353535353535353535353535353535353535",
+        "value": "1000000000000000000",
+        "data": "0x"
+      },
+      "raw": "0x02f87301808459682f008506fc23ac00825208943535353535353535353535353535353535353535880de0b6b3a764000080c080a067238d1060802eee128ce9b7e00492d1c3665bee4db580e018547a9e4ac4f09ca02a0ab09a5bd88319b90a9ad26240f1918444f328f5ff3a90d7271e0682f5f619",
+      "hash": "0x780f117386c6cf20e956eccfc2356fc8b06ffa484532b612162dcd3899f03e69"
+    },
+    {
+      "tx": {
+        "type": 2,
+        "chainId": 137,
+        "nonce": 7,
+        "maxPriorityFeePerGas": "30000000000",
+        "maxFeePerGas": "90000000000",
+        "gasLimit": "80000",
+        "to": "0xc2132D05D31c914a87C6611C10748AEb04B58e8F",
+        "value": "0",
+        "data": "0xa9059cbb000000000000000000000000de709f2102306220921060314715629080e2fb770000000000000000000000000000000000000000000000000000000005f5e100"
+      },
+      "raw": "0x02f8b38189078506fc23ac008514f46b04008301388094c2132d05d31c914a87c6611c10748aeb04b58e8f80b844a9059cbb000000000000000000000000de709f2102306220921060314715629080e2fb770000000000000000000000000000000000000000000000000000000005f5e100c001a0176176cc85cb704ed136a411b81d2e0da3670727f510e8764868a2c4ed63ecc8a01228e8448dc098c3e858f7131bd313e3d15b4e48326cce2a71a129ecc82dc377",
+      "hash": "0xf96ed849fb3cc4bc47ceeea2a87841a714396088b35da71634623d8771642f40"
+    },
+    {
+      "tx": {
+        "type": 2,
+        "chainId": 11155111,
+        "nonce": 1,
+        "maxPriorityFeePerGas": "1000000000",
+        "maxFeePerGas": "2000000000",
+        "gasLimit": "21000",
+        "to": "0x9d8A62f656a8d1615C1294fd71e9CFb3E4855A4F",
+        "value": "0",
+        "data": "0x"
+      },
+      "raw": "0x02f86d83aa36a701843b9aca008477359400825208949d8a62f656a8d1615c1294fd71e9cfb3e4855a4f8080c001a0f5d1ae193542f63b71ced308f25af688957e5fe97a2d1ce15b22a32ccf185641a011d4c59ae02982f4c7600d660efd18b54ed0b93083da8b8fca912464b05c51ff",
+      "hash": "0x9f427fe39fbcd37d00b1c04c31a28bcc78f67b16ef5cc8b460fea0bb415d3da9"
+    }
+  ]
+}
