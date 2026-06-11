@@ -6,6 +6,7 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use ItHealer\LaravelEvm\Services\ChainList\DTO\ChainDTO;
+use ItHealer\LaravelEvm\Support\ProxyFormatter;
 
 /**
  * Catalog of all known EVM networks (https://chainid.network),
@@ -58,6 +59,7 @@ class ChainListService
     {
         $response = Http::acceptJson()
             ->timeout(60)
+            ->withOptions(['proxy' => ProxyFormatter::format(config('evm.proxy'))])
             ->get((string)config('evm.chainlist.url', 'https://chainid.network/chains.json'));
 
         $response->throw();

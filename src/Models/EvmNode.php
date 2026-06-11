@@ -62,7 +62,7 @@ class EvmNode extends Model
                 baseURL: $this->base_url,
                 chainId: $network->chain_id,
                 nativeDecimals: $network->currency_decimals,
-                proxy: $this->proxy,
+                proxy: $this->proxy ?? config('evm.proxy'),
                 txType: $network->tx_type,
             );
         }

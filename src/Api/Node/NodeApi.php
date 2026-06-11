@@ -11,6 +11,7 @@ use ItHealer\LaravelEvm\Api\Node\DTO\PreviewTransferDTO;
 use ItHealer\LaravelEvm\Api\Node\DTO\TransferDTO;
 use ItHealer\LaravelEvm\Enums\TxType;
 use ItHealer\LaravelEvm\Exceptions\TransferException;
+use ItHealer\LaravelEvm\Support\ProxyFormatter;
 use ItHealer\LaravelEvm\Tx\Eip1559TransactionSigner;
 use ItHealer\LaravelEvm\Tx\LegacyTransactionSigner;
 use ItHealer\LaravelEvm\Tx\Support\Hex;
@@ -29,7 +30,7 @@ class NodeApi
         ?string $proxy = null,
         protected ?TxType $txType = null,
     ) {
-        $this->proxy = $this->formatProxy($proxy);
+        $this->proxy = ProxyFormatter::format($proxy);
     }
 
     public function chainId(): int
@@ -98,29 +99,6 @@ class NodeApi
         }
 
         return $result['result'];
-    }
-
-    protected function formatProxy(?string $proxy): ?string
-    {
-        if (!$proxy) {
-            return null;
-        }
-
-        if (preg_match('/^(socks4|socks5|https?|http):\/\/(([^:]+):([^@]+)@)?([^:\/]+)(:\d+)?$/', $proxy, $matches)) {
-            $protocol = $matches[1];
-            $username = $matches[3] ?? null;
-            $password = $matches[4] ?? null;
-            $host = $matches[5];
-            $port = $matches[6] ?? '';
-
-            if ($username && $password) {
-                return "{$protocol}://{$username}:{$password}@{$host}{$port}";
-            }
-
-            return "{$protocol}://{$host}{$port}";
-        }
-
-        throw new \InvalidArgumentException('Invalid proxy format. Supported formats: socks4|socks5|http|https.');
     }
 
     public function getBalance(string $address): BigDecimal

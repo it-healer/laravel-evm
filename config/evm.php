@@ -46,6 +46,13 @@ return [
     ],
 
     /*
+     * Default proxy (socks4|socks5|http|https://[user:pass@]host[:port]) used for
+     * ChainList/TokenList catalog requests and as a fallback for nodes and
+     * explorers that have no proxy of their own.
+     */
+    'proxy' => env('EVM_PROXY'),
+
+    /*
      * EVM chains catalog (https://chainid.network) used to pick networks to add.
      */
     'chainlist' => [

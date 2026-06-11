@@ -6,6 +6,7 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use ItHealer\LaravelEvm\Services\TokenList\DTO\TokenInfoDTO;
+use ItHealer\LaravelEvm\Support\ProxyFormatter;
 
 /**
  * Token catalogs in the https://tokenlists.org format,
@@ -53,7 +54,10 @@ class TokenListService
 
     protected function download(string $url): array
     {
-        $response = Http::acceptJson()->timeout(60)->get($url);
+        $response = Http::acceptJson()
+            ->timeout(60)
+            ->withOptions(['proxy' => ProxyFormatter::format(config('evm.proxy'))])
+            ->get($url);
 
         $response->throw();
 
