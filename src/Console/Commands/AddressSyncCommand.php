@@ -12,7 +12,7 @@ use ItHealer\LaravelEvm\Services\Sync\AddressNetworkSync;
 
 class AddressSyncCommand extends Command
 {
-    protected $signature = 'evm:address-sync {address_id} {--network= : Network id, chain id or name (all active networks by default)} {--force : Bypass the touch (TSS) check}';
+    protected $signature = 'evm:address-sync {address_id} {--network= : Network id, chain id or name (active networks attached to the wallet by default)} {--force : Bypass the touch (TSS) check}';
 
     protected $description = 'Start EVM sync of one address';
 
@@ -29,7 +29,7 @@ class AddressSyncCommand extends Command
 
             $this->line('-- Address: *'.$address->address.'* '.$address->title);
 
-            foreach ($this->networks() as $network) {
+            foreach ($this->networks($address) as $network) {
                 $this->line('-- Network: '.$network->name);
 
                 $service = App::make(AddressNetworkSync::class, [
@@ -50,9 +50,11 @@ class AddressSyncCommand extends Command
     }
 
     /**
+     * Without --network: only active networks attached to the address wallet.
+     *
      * @return iterable<EvmNetwork>
      */
-    protected function networks(): iterable
+    protected function networks(EvmAddress $address): iterable
     {
         $networkOption = $this->option('network');
 
@@ -66,9 +68,6 @@ class AddressSyncCommand extends Command
             return [$network];
         }
 
-        /** @var class-string<EvmNetwork> $model */
-        $model = Evm::getModel(EvmModel::Network);
-
-        return $model::query()->where('active', true)->orderBy('name')->get();
+        return $address->wallet->networks()->where('active', true)->orderBy('name')->get();
     }
 }

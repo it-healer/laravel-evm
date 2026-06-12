@@ -82,12 +82,16 @@ class NetworkSync extends BaseSync
         return $this;
     }
 
+    /**
+     * Only wallets with this network attached are synchronized.
+     */
     protected function syncWallets(): static
     {
         /** @var class-string<EvmWallet> $model */
         $model = Evm::getModel(EvmModel::Wallet);
 
         $model::query()
+            ->whereHas('networks', fn ($query) => $query->whereKey($this->network->id))
             ->orderBy('sync_at')
             ->orderBy('name')
             ->each(function (EvmWallet $wallet) {

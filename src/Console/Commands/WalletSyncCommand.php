@@ -12,7 +12,7 @@ use ItHealer\LaravelEvm\Services\Sync\WalletNetworkSync;
 
 class WalletSyncCommand extends Command
 {
-    protected $signature = 'evm:wallet-sync {wallet_id} {--network= : Network id, chain id or name (all active networks by default)}';
+    protected $signature = 'evm:wallet-sync {wallet_id} {--network= : Network id, chain id or name (active networks attached to the wallet by default)}';
 
     protected $description = 'Start EVM sync of one wallet';
 
@@ -27,7 +27,7 @@ class WalletSyncCommand extends Command
             $model = Evm::getModel(EvmModel::Wallet);
             $wallet = $model::findOrFail($walletId);
 
-            foreach ($this->networks() as $network) {
+            foreach ($this->networks($wallet) as $network) {
                 $this->line('-- Network: '.$network->name);
 
                 $service = App::make(WalletNetworkSync::class, compact('wallet', 'network'));
@@ -44,9 +44,11 @@ class WalletSyncCommand extends Command
     }
 
     /**
+     * Without --network: only active networks attached to the wallet.
+     *
      * @return iterable<EvmNetwork>
      */
-    protected function networks(): iterable
+    protected function networks(EvmWallet $wallet): iterable
     {
         $networkOption = $this->option('network');
 
@@ -60,9 +62,6 @@ class WalletSyncCommand extends Command
             return [$network];
         }
 
-        /** @var class-string<EvmNetwork> $model */
-        $model = Evm::getModel(EvmModel::Network);
-
-        return $model::query()->where('active', true)->orderBy('name')->get();
+        return $wallet->networks()->where('active', true)->orderBy('name')->get();
     }
 }

@@ -112,6 +112,7 @@ function syncSetup(): array
     ]);
 
     $wallet = Evm::createWallet('w', mnemonic: 'test test test test test test test test test test test junk');
+    Evm::attachNetwork($wallet, $network);
 
     return [$network, $wallet->addresses->first()];
 }
@@ -174,4 +175,27 @@ it('skips inactive networks in evm:sync', function () {
     $this->artisan('evm:sync')->assertSuccessful();
 
     expect(EvmTransaction::count())->toBe(0);
+});
+
+it('skips wallets without the network attached in evm:sync', function () {
+    [$network, $address] = syncSetup();
+    Evm::detachNetwork($address->wallet, $network);
+
+    $this->artisan('evm:sync')->assertSuccessful();
+
+    expect(EvmTransaction::count())->toBe(0);
+});
+
+it('attaches and detaches networks idempotently', function () {
+    [$network, $address] = syncSetup();
+    $wallet = $address->wallet;
+
+    expect(Evm::hasNetwork($wallet, $network))->toBeTrue();
+
+    Evm::attachNetwork($wallet, $network);
+    expect($wallet->networks()->count())->toBe(1);
+
+    Evm::detachNetwork($wallet, $network);
+    expect(Evm::hasNetwork($wallet, $network))->toBeFalse()
+        ->and($network->fresh())->not->toBeNull();
 });

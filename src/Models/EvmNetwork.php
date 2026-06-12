@@ -3,6 +3,7 @@
 namespace ItHealer\LaravelEvm\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use ItHealer\LaravelEvm\Enums\EvmModel;
 use ItHealer\LaravelEvm\Enums\TxType;
@@ -47,6 +48,18 @@ class EvmNetwork extends Model
         $model = Evm::getModel(EvmModel::Node);
 
         return $this->hasMany($model, 'network_id');
+    }
+
+    /**
+     * Wallets that have this network attached.
+     */
+    public function wallets(): BelongsToMany
+    {
+        /** @var class-string<EvmWallet> $model */
+        $model = Evm::getModel(EvmModel::Wallet);
+
+        return $this->belongsToMany($model, 'evm_wallet_networks', 'network_id', 'wallet_id')
+            ->withTimestamps();
     }
 
     public function explorers(): HasMany

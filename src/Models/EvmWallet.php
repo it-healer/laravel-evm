@@ -4,6 +4,7 @@ namespace ItHealer\LaravelEvm\Models;
 
 use Brick\Math\BigDecimal;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasManyThrough;
 use ItHealer\LaravelEvm\Casts\EncryptedCast;
@@ -54,6 +55,18 @@ class EvmWallet extends Model
     public function getPlainPasswordAttribute(): ?string
     {
         return self::$plainPasswords[$this->name] ?? null;
+    }
+
+    /**
+     * Networks attached to this wallet: only they are shown and synchronized.
+     */
+    public function networks(): BelongsToMany
+    {
+        /** @var class-string<EvmNetwork> $model */
+        $model = Evm::getModel(EvmModel::Network);
+
+        return $this->belongsToMany($model, 'evm_wallet_networks', 'wallet_id', 'network_id')
+            ->withTimestamps();
     }
 
     public function addresses(): HasMany

@@ -3,10 +3,34 @@
 namespace ItHealer\LaravelEvm\Concerns;
 
 use ItHealer\LaravelEvm\Enums\EvmModel;
+use ItHealer\LaravelEvm\Models\EvmNetwork;
 use ItHealer\LaravelEvm\Models\EvmWallet;
 
 trait Wallet
 {
+    /**
+     * Attach a network to the wallet: it becomes visible and synchronized.
+     * Idempotent.
+     */
+    public function attachNetwork(EvmWallet $wallet, EvmNetwork $network): void
+    {
+        $wallet->networks()->syncWithoutDetaching([$network->id]);
+    }
+
+    /**
+     * Detach a network from the wallet: it is no longer shown or synchronized.
+     * Already synced data (balances, transactions) stays intact.
+     */
+    public function detachNetwork(EvmWallet $wallet, EvmNetwork $network): void
+    {
+        $wallet->networks()->detach($network->id);
+    }
+
+    public function hasNetwork(EvmWallet $wallet, EvmNetwork $network): bool
+    {
+        return $wallet->networks()->whereKey($network->id)->exists();
+    }
+
     public function importWallet(
         string $name,
         string|array $mnemonic,
