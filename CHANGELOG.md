@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.3.1 — 2026-06-15
+
+- Fix: `eth_estimateGas` failed with "cannot unmarshal hex number with leading zero digits
+  into ... TransactionArgs.value" for amounts whose wei value has an odd number of hex digits
+  (e.g. exactly 1 POL/ETH = 1e18). The `value` is now encoded as a canonical JSON-RPC QUANTITY
+  (no leading zeros) via `Hex::toQuantity()`; transaction signing (byte/RLP encoding) is unchanged.
+
 ## v1.3.0 — 2026-06-15
 
 - Add: **adaptive (touch-based) synchronization**. `evm.touch` now supports `fast_interval`

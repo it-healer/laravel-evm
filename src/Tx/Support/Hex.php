@@ -59,6 +59,18 @@ class Hex
         return self::evenLength(dechex($value));
     }
 
+    /**
+     * BigDecimal integer value to a JSON-RPC QUANTITY hex (0x-prefixed, no leading zeros).
+     * Node implementations (geth's hexutil.Big) reject quantities with leading zero digits,
+     * which the even-length byte encoding produces for odd-nibble values (e.g. 1e18 wei).
+     */
+    public static function toQuantity(BigDecimal $value): string
+    {
+        $hex = ltrim($value->toBigInteger()->toBase(16), '0');
+
+        return '0x'.($hex === '' ? '0' : $hex);
+    }
+
     public static function evenLength(string $hex): string
     {
         return strlen($hex) % 2 === 0 ? $hex : '0'.$hex;

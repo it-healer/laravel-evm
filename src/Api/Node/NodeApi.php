@@ -244,7 +244,8 @@ class NodeApi
             $params['data'] = $data;
         }
         if ($valueWei !== null && !$valueWei->isZero()) {
-            $params['value'] = '0x'.Hex::fromBigDecimal($valueWei);
+            // QUANTITY hex (no leading zeros); geth's hexutil.Big rejects e.g. 0x0de0...
+            $params['value'] = Hex::toQuantity($valueWei);
         }
 
         return Hex::toBigDecimal($this->rpc('eth_estimateGas', [$params]));

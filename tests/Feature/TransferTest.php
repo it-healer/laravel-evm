@@ -68,6 +68,23 @@ it('sends a native transfer as EIP-1559 when base fee is present', function () {
     });
 });
 
+it('encodes the estimateGas value as a canonical quantity without leading zeros', function () {
+    [$network, , $from] = setupNetwork();
+
+    // 1 ETH = 1e18 wei = 0xde0b6b3a7640000 (odd nibble count) — must not be padded to 0x0de0...
+    Evm::previewTransfer($network, $from, '0x3535353535353535353535353535353535353535', '1');
+
+    Http::assertSent(function ($request) {
+        $data = $request->data();
+
+        if ($data['method'] !== 'eth_estimateGas') {
+            return false;
+        }
+
+        return ($data['params'][0]['value'] ?? null) === '0xde0b6b3a7640000';
+    });
+});
+
 it('sends a legacy transfer when tx_type is forced to 0', function () {
     [$network, , $from] = setupNetwork(['txType' => TxType::Legacy]);
 
