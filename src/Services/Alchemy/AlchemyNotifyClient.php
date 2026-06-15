@@ -130,8 +130,9 @@ class AlchemyNotifyClient
 
     public function deleteWebhook(string $webhookId): void
     {
+        // Alchemy expects webhook_id as a query parameter on DELETE, not in the body.
         $this->request()
-            ->delete('/delete-webhook', ['webhook_id' => $webhookId])
+            ->delete('/delete-webhook?webhook_id='.urlencode($webhookId))
             ->throw();
     }
 

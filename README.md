@@ -1,5 +1,7 @@
 # Laravel EVM
 
+**English** | [Русский](README.ru.md)
+
 A Laravel package for working with **any EVM network** (Ethereum, BSC, Polygon, Arbitrum, Base, ...):
 HD wallets, address generation, native coin and ERC-20 token balances, incoming deposit tracking
 with webhooks, and outgoing transfers (legacy and EIP-1559).

@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.2.1 — 2026-06-15
+
+- Fix: `AlchemyNotifyClient::deleteWebhook()` now passes `webhook_id` as a query parameter
+  (Alchemy rejected it in the request body with a 400 ValidationError).
+- Docs: add a Russian translation of the README (`README.ru.md`) with a language switcher.
+
 ## v1.2.0 — 2026-06-15
 
 - Add: **Alchemy Notify (Address Activity webhooks)** as a push alternative to polling. The package
