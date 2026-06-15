@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.1.1 — 2026-06-15
+
+- Fix: `has_password`/`has_mnemonic`/`has_seed` accessors no longer decrypt the stored value
+  to test for presence. They now inspect the raw attribute, so serializing a locked wallet
+  (e.g. via `toArray()`/Inertia props without prior `unlockWallet()`) no longer throws
+  `DecryptException: The MAC is invalid`.
+
 ## v1.0.0 — 2026-06-11
 
 Initial release.

@@ -151,16 +151,16 @@ class EvmWallet extends Model
 
     public function getHasPasswordAttribute(): bool
     {
-        return !!$this->password;
+        return !empty($this->attributes['password']);
     }
 
     public function getHasMnemonicAttribute(): bool
     {
-        return !!$this->mnemonic;
+        return !empty($this->attributes['mnemonic']);
     }
 
     public function getHasSeedAttribute(): bool
     {
-        return !!$this->seed;
+        return !empty($this->attributes['seed']);
     }
 }
