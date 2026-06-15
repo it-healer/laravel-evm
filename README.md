@@ -232,8 +232,33 @@ Sync services support progress/cancellation hooks (for UI-driven resyncs):
     ->run();
 ```
 
-For large installations enable the Touch Synchronization System (`evm.touch`) — only
-addresses touched recently (`touch_at`) are synchronized.
+### Adaptive synchronization (touch)
+
+For large installations enable adaptive sync (`evm.touch`) so addresses are polled **often
+while in use and rarely while idle**, instead of every run. An address is "active" for
+`waiting_seconds` after its last `touch_at` (set on user/merchant activity); while active it
+syncs no more often than `fast_interval`, while idle no more often than `slow_interval`.
+
+```php
+// config/evm.php
+'touch' => [
+    'enabled' => true,
+    'waiting_seconds' => 1800,  // stay "active" 30 min after last touch
+    'fast_interval' => 60,      // while active: at most once per 60s
+    'slow_interval' => 3600,    // while idle: at most once per hour (null = skip idle entirely)
+],
+```
+
+Mark activity by updating `touch_at` whenever the wallet is used (GUI view, API call, unlock):
+
+```php
+$address->update(['touch_at' => now()]);
+// or in bulk for a wallet:
+$wallet->addresses()->update(['touch_at' => now()]);
+```
+
+Defaults (`fast_interval` 0, `slow_interval` null) preserve the legacy behavior: active
+addresses sync every run, idle ones are skipped. `evm:address-sync --force` bypasses the schedule.
 
 ## Real-time deposits with Alchemy webhooks
 

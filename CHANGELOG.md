@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.3.0 — 2026-06-15
+
+- Add: **adaptive (touch-based) synchronization**. `evm.touch` now supports `fast_interval`
+  (max sync frequency while an address is active) and `slow_interval` (while idle; `null` = skip
+  idle addresses entirely). `waiting_seconds` is the active window after the last `touch_at`.
+  Addresses are polled often while in use and rarely while idle, cutting RPC/API/CU usage.
+  Defaults (`fast_interval` 0, `slow_interval` null) preserve the previous behavior.
+
 ## v1.2.1 — 2026-06-15
 
 - Fix: `AlchemyNotifyClient::deleteWebhook()` now passes `webhook_id` as a query parameter

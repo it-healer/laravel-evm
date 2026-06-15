@@ -8,14 +8,27 @@ return [
      */
     'touch' => [
         /*
-         * Is system enabled?
+         * Is the adaptive (touch-based) synchronization enabled?
+         * When enabled, addresses are synced frequently while in use and rarely while idle.
          */
         'enabled' => false,
 
         /*
-         * The time during which the address is synchronized after touching it (in seconds).
+         * Active window: an address is considered "in use" for this many seconds after its
+         * last touch (touch_at — set on user/merchant activity).
          */
         'waiting_seconds' => 3600,
+
+        /*
+         * Minimum seconds between syncs while the address is active (0 = every run).
+         */
+        'fast_interval' => 0,
+
+        /*
+         * Minimum seconds between syncs while the address is idle.
+         * null = skip idle addresses entirely (legacy behavior).
+         */
+        'slow_interval' => null,
     ],
 
     /*

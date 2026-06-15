@@ -114,13 +114,8 @@ class AddressNetworkSync extends BaseSync
             return;
         }
 
-        if (
-            $this->touchEnabled &&
-            !$this->force &&
-            $this->address->touch_at &&
-            $this->address->touch_at < Date::now()->subSeconds($this->touchPeriod)
-        ) {
-            $this->log('No synchronization required, the address has not been touched!', 'success');
+        if ($this->touchEnabled && !$this->force && $this->shouldSkipBySchedule()) {
+            $this->log('No synchronization required by the adaptive touch schedule.', 'success');
             return;
         }
 
@@ -129,6 +124,36 @@ class AddressNetworkSync extends BaseSync
             ->tokenBalances()
             ->transactions()
             ->runWebhooks();
+    }
+
+    /**
+     * Adaptive touch schedule: an address is "active" for `waiting_seconds` after its last
+     * touch (user/merchant activity). While active it syncs no more often than `fast_interval`;
+     * while idle, no more often than `slow_interval` (null = skip idle addresses entirely).
+     */
+    protected function shouldSkipBySchedule(): bool
+    {
+        $now = Date::now();
+
+        $activeWindow = (int) config('evm.touch.waiting_seconds', 3600);
+        $isActive = ! $this->address->touch_at
+            || $this->address->touch_at >= $now->copy()->subSeconds($activeWindow);
+
+        if ($isActive) {
+            $interval = (int) config('evm.touch.fast_interval', 0);
+        } else {
+            $slowInterval = config('evm.touch.slow_interval');
+
+            if ($slowInterval === null) {
+                return true;
+            }
+
+            $interval = (int) $slowInterval;
+        }
+
+        return $interval > 0
+            && $this->balanceRow->sync_at
+            && $this->balanceRow->sync_at >= $now->copy()->subSeconds($interval);
     }
 
     protected function balance(): static

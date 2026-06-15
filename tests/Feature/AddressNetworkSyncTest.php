@@ -186,6 +186,79 @@ it('skips wallets without the network attached in evm:sync', function () {
     expect(EvmTransaction::count())->toBe(0);
 });
 
+function didSyncBalance(): bool
+{
+    $sent = false;
+    Http::assertSent(function ($request) use (&$sent) {
+        if (($request->data()['method'] ?? null) === 'eth_getBalance') {
+            $sent = true;
+        }
+
+        return true;
+    });
+
+    return $sent;
+}
+
+it('skips an active address synced within the fast interval', function () {
+    [$network, $address] = syncSetup();
+    config()->set('evm.touch.enabled', true);
+    config()->set('evm.touch.fast_interval', 300);
+
+    $address->update(['touch_at' => now()]);                                   // active
+    $address->balanceForNetwork($network)->update(['sync_at' => now()->subSeconds(60)]); // 60s < 300
+
+    (new AddressNetworkSync($address->fresh(), $network))->run();
+
+    expect(didSyncBalance())->toBeFalse();
+});
+
+it('syncs an active address once the fast interval elapses', function () {
+    [$network, $address] = syncSetup();
+    config()->set('evm.touch.enabled', true);
+    config()->set('evm.touch.fast_interval', 300);
+
+    $address->update(['touch_at' => now()]);                                    // active
+    $address->balanceForNetwork($network)->update(['sync_at' => now()->subSeconds(600)]); // 600s > 300
+
+    (new AddressNetworkSync($address->fresh(), $network))->run();
+
+    expect(didSyncBalance())->toBeTrue();
+});
+
+it('syncs an idle address only after the slow interval', function () {
+    [$network, $address] = syncSetup();
+    config()->set('evm.touch.enabled', true);
+    config()->set('evm.touch.fast_interval', 60);
+    config()->set('evm.touch.slow_interval', 3600);
+
+    // idle: touched 2h ago (beyond the 3600s active window)
+    $address->update(['touch_at' => now()->subSeconds(7200)]);
+
+    // synced 10 min ago — within slow interval → skip
+    $address->balanceForNetwork($network)->update(['sync_at' => now()->subSeconds(600)]);
+    (new AddressNetworkSync($address->fresh(), $network))->run();
+    expect(didSyncBalance())->toBeFalse();
+
+    // synced 2h ago — beyond slow interval → sync
+    $address->balanceForNetwork($network)->update(['sync_at' => now()->subSeconds(7200)]);
+    (new AddressNetworkSync($address->fresh(), $network))->run();
+    expect(didSyncBalance())->toBeTrue();
+});
+
+it('skips idle addresses entirely when slow_interval is null', function () {
+    [$network, $address] = syncSetup();
+    config()->set('evm.touch.enabled', true);
+    config()->set('evm.touch.slow_interval', null);
+
+    $address->update(['touch_at' => now()->subSeconds(7200)]);                   // idle
+    $address->balanceForNetwork($network)->update(['sync_at' => now()->subSeconds(99999)]);
+
+    (new AddressNetworkSync($address->fresh(), $network))->run();
+
+    expect(didSyncBalance())->toBeFalse();
+});
+
 it('attaches and detaches networks idempotently', function () {
     [$network, $address] = syncSetup();
     $wallet = $address->wallet;
