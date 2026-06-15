@@ -56,6 +56,7 @@ trait Explorer
         return $network->explorers()
             ->where('worked', '=', true)
             ->where('available', '=', true)
+            ->orderByCredits()
             ->orderBy('requests')
             ->firstOrFail();
     }

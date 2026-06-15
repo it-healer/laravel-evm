@@ -8,9 +8,13 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use ItHealer\LaravelEvm\Api\Node\NodeApi;
 use ItHealer\LaravelEvm\Enums\EvmModel;
 use ItHealer\LaravelEvm\Facades\Evm;
+use ItHealer\LaravelEvm\Models\Concerns\TracksComputeUnits;
+use ItHealer\LaravelEvm\Services\Alchemy\ComputeUnits;
 
 class EvmNode extends Model
 {
+    use TracksComputeUnits;
+
     protected ?NodeApi $_api = null;
 
     protected $fillable = [
@@ -25,6 +29,8 @@ class EvmNode extends Model
         'block_number',
         'requests',
         'requests_at',
+        'credits',
+        'credits_at',
         'worked',
         'available',
     ];
@@ -40,6 +46,8 @@ class EvmNode extends Model
             'sync_data' => 'array',
             'block_number' => 'integer',
             'requests_at' => 'date',
+            'credits' => 'integer',
+            'credits_at' => 'datetime',
             'worked' => 'boolean',
             'available' => 'boolean',
         ];
@@ -64,6 +72,7 @@ class EvmNode extends Model
                 nativeDecimals: $network->currency_decimals,
                 proxy: $this->proxy ?? config('evm.proxy'),
                 txType: $network->tx_type,
+                onUsage: fn (string $method) => $this->recordCredits(ComputeUnits::cost($method)),
             );
         }
 
@@ -97,11 +106,13 @@ class EvmNode extends Model
         if ($address instanceof EvmAddress) {
             $address = $address->address;
         }
+
+        $decimals = $contract instanceof EvmToken ? $contract->decimals : null;
         if ($contract instanceof EvmToken) {
             $contract = $contract->address;
         }
 
-        $result = $this->api()->getBalanceOfToken($address, $contract);
+        $result = $this->api()->getBalanceOfToken($address, $contract, $decimals);
 
         $this->increment('requests');
 

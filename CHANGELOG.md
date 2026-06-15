@@ -1,5 +1,29 @@
 # Changelog
 
+## v1.2.0 — 2026-06-15
+
+- Add: **Alchemy Notify (Address Activity webhooks)** as a push alternative to polling. The package
+  receives the notification, verifies its HMAC signature and triggers a targeted `AddressNetworkSync`
+  for the involved address — deposit detection, dedup and your `webhook_handler` stay unchanged, but
+  run only when activity actually happens (drastically fewer Compute Units than minute-by-minute polling).
+  - New model/table `EvmAlchemyWebhook` (one webhook per network, encrypted signing key).
+  - `AlchemyNotifyClient` (Notify management API) and `Evm::ensureAlchemyWebhook()`,
+    `subscribeAlchemyAddress()`, `unsubscribeAlchemyAddress()`, `reconcileAlchemyWebhook()`.
+  - Receiver route (opt-in via `evm.alchemy.webhook.enabled`), `SyncEvmAddressJob`,
+    optional auto-subscribe of new addresses (`evm.alchemy.auto_subscribe`).
+  - Commands: `evm:alchemy-setup`, `evm:alchemy-reconcile`, `evm:confirm-deposits`.
+- Add: **Compute Unit (CU) metering and least-credits load balancing.** Nodes and explorers now
+  track `credits` spent per method (mirroring Alchemy's CU costs, overridable via
+  `config('evm.compute_units')`); the counter resets monthly and `getNode()`/`getExplorer()` pick
+  the least-used one, distributing load across several nodes/explorers.
+- Add: CU optimizations —
+  - `evm.sync.track_outgoing` (default `true`): set to `false` to detect deposits only and halve
+    the Alchemy `getAssetTransfers` requests.
+  - `evm.sync.block_cache_ttl` (default `0`): cache `eth_blockNumber` per network for N seconds so
+    a multi-address run fetches it once instead of once per address.
+  - Token balance reads reuse the stored `EvmToken` decimals instead of spending a `decimals()`
+    `eth_call` on every read.
+
 ## v1.1.1 — 2026-06-15
 
 - Fix: `has_password`/`has_mnemonic`/`has_seed` accessors no longer decrypt the stored value

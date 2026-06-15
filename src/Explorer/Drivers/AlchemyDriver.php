@@ -10,6 +10,7 @@ use Illuminate\Support\Facades\Http;
 use ItHealer\LaravelEvm\Api\DTOPaginator;
 use ItHealer\LaravelEvm\Explorer\DTO\ExplorerTokenTransactionDTO;
 use ItHealer\LaravelEvm\Explorer\DTO\ExplorerTransactionDTO;
+use ItHealer\LaravelEvm\Services\Alchemy\ComputeUnits;
 use ItHealer\LaravelEvm\Tx\Support\Hex;
 
 /**
@@ -98,6 +99,11 @@ class AlchemyDriver extends BaseExplorerDriver
         }
     }
 
+    public function creditsPerRequest(): int
+    {
+        return ComputeUnits::cost('alchemy_getAssetTransfers');
+    }
+
     /**
      * Both directions (incoming then outgoing), each cursor-paginated.
      */
@@ -110,7 +116,13 @@ class AlchemyDriver extends BaseExplorerDriver
         ?Closure $onRequest,
         bool $isToken,
     ): Generator {
-        foreach (['toAddress', 'fromAddress'] as $direction) {
+        // Deposit detection only needs incoming (toAddress) transfers. Disabling
+        // outgoing tracking halves the alchemy_getAssetTransfers requests (and CU).
+        $directions = config('evm.sync.track_outgoing', true)
+            ? ['toAddress', 'fromAddress']
+            : ['toAddress'];
+
+        foreach ($directions as $direction) {
             $pageKey = null;
 
             do {

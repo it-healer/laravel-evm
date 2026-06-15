@@ -233,6 +233,100 @@ Sync services support progress/cancellation hooks (for UI-driven resyncs):
 For large installations enable the Touch Synchronization System (`evm.touch`) — only
 addresses touched recently (`touch_at`) are synchronized.
 
+## Real-time deposits with Alchemy webhooks
+
+Polling pays for an explorer scan of every address on every run, even when nothing happened.
+[Alchemy Address Activity webhooks](https://www.alchemy.com/docs/reference/address-activity-webhook)
+flip this around: Alchemy **pushes** a notification the moment a watched address has on-chain
+activity — **incoming or outgoing** — the package verifies its signature and triggers a **targeted**
+`AddressNetworkSync` for that address (matched whether it appears as sender or recipient, across every
+wallet it belongs to). Deposit detection, outgoing transaction history, dedup and your `webhook_handler`
+stay exactly the same — you just stop paying Compute Units for idle polling.
+
+> Free tier: 5 webhooks (= up to 5 networks), up to 100k addresses per webhook. The Notify
+> **Auth Token** (dashboard → Webhooks → top-right) is **not** your RPC API key.
+
+### 1. Configure
+
+```dotenv
+EVM_ALCHEMY_NOTIFY_AUTH_TOKEN=your-notify-auth-token
+EVM_ALCHEMY_WEBHOOK_ENABLED=true
+EVM_ALCHEMY_WEBHOOK_URL=https://your-app.com/evm/alchemy/webhook   # public HTTPS receiver
+EVM_ALCHEMY_AUTO_SUBSCRIBE=true                                    # subscribe new addresses automatically
+```
+
+The receiver route is registered by the package (path `evm.alchemy.webhook.path`, default
+`evm/alchemy/webhook`). It is **not** under the `web`/`auth` middleware groups — the HMAC
+signature is the authentication — so keep it out of any localized/CSRF-protected prefix.
+
+### 2. Create the webhook and subscribe addresses
+
+```bash
+php artisan evm:alchemy-setup polygon --reconcile   # creates the webhook + pushes existing addresses
+```
+
+`--reconcile` (or `evm:alchemy-reconcile`) diffs the addresses the package tracks in the network
+(available addresses of wallets that have the network attached) against Alchemy's list and applies
+the difference (batched to 500/request). Run it again after attaching a network to a wallet, or rely
+on `evm.alchemy.auto_subscribe` for incremental add/remove on address create/delete.
+
+```bash
+php artisan evm:alchemy-reconcile            # all configured networks
+php artisan evm:alchemy-reconcile polygon    # one network
+```
+
+Programmatic API (facade):
+
+```php
+Evm::ensureAlchemyWebhook($polygon);                 // create or reuse, returns EvmAlchemyWebhook
+Evm::subscribeAlchemyAddress($address, $polygon);
+Evm::unsubscribeAlchemyAddress($address, $polygon);
+Evm::reconcileAlchemyWebhook($polygon);              // ['added' => [...], 'removed' => [...]]
+```
+
+### 3. Confirmations
+
+Address Activity webhooks fire **once** (when the tx is mined) and are not re-sent as confirmations
+grow. If your handler waits for N confirmations, schedule a cheap, targeted top-up that re-syncs only
+addresses with deposits still below `confirmations_target`:
+
+```php
+Schedule::command('evm:confirm-deposits')->everyFiveMinutes()->withoutOverlapping();
+```
+
+Keep `evm:sync` as a rare fallback (e.g. hourly) for any missed deliveries — re-runs are idempotent.
+
+## Compute Units, cost control & load balancing
+
+Every RPC call on a node and every explorer request is metered in a `credits` counter
+(Compute Units) that **resets at the start of each calendar month**. Node and explorer
+selection picks the one with the **fewest credits this month**, so load (and Alchemy CU
+spend) is distributed automatically across several nodes/explorers of a network.
+
+```php
+$node = Evm::getNode($polygon);   // the least-used node this month
+$node->credits;                   // CU spent this month
+$node->creditsThisMonth();        // same, but 0 if the counter is from a previous month
+```
+
+CU costs per method come from `ItHealer\LaravelEvm\Services\Alchemy\ComputeUnits` and mirror
+Alchemy's published prices; override any of them in `config('evm.compute_units')`. For non-Alchemy
+providers the same table is just a load weight.
+
+### Reducing Alchemy CU
+
+Polling is CU-hungry because `alchemy_getAssetTransfers` costs 150 CU and runs for both
+directions on every address, every run. Options, cheapest first:
+
+- **Use webhooks** instead of polling (see above) — you pay CU only when activity happens.
+- **`evm.sync.track_outgoing = false`** — detect deposits only (query just `toAddress`),
+  halving the `getAssetTransfers` requests on the Alchemy explorer.
+- **`evm.sync.block_cache_ttl = N`** (seconds) — fetch `eth_blockNumber` once per network per
+  run instead of once per address.
+- Stored token decimals are reused automatically, so token balance reads no longer spend an
+  extra `decimals()` `eth_call`.
+- Add several nodes/explorers per network — requests spread across them by least-credits.
+
 ## Model customization
 
 Every model can be replaced in `config('evm.models')` with a subclass — the package

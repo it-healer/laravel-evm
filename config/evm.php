@@ -30,7 +30,31 @@ return [
          * like BSC/Polygon need a bigger overlap).
          */
         'lag_blocks' => 20,
+
+        /*
+         * Track outgoing transfers (fromAddress) in addition to incoming ones.
+         * Disable to detect only deposits — on the Alchemy explorer this halves the
+         * alchemy_getAssetTransfers requests (and Compute Units) per sync, at the cost
+         * of not recording outgoing EvmTransaction rows from the explorer history.
+         */
+        'track_outgoing' => (bool)env('EVM_SYNC_TRACK_OUTGOING', true),
+
+        /*
+         * Cache the latest block number per network for this many seconds. A value > 0
+         * means a multi-address sync run fetches eth_blockNumber once instead of once
+         * per address. Keep small (a few seconds) so confirmations stay fresh; 0 disables.
+         */
+        'block_cache_ttl' => (int)env('EVM_SYNC_BLOCK_CACHE_TTL', 0),
     ],
+
+    /*
+     * Compute Unit (CU) cost overrides per RPC method, used to meter `credits` spent on
+     * each node/explorer (reset monthly) and to pick the least-used one. Defaults mirror
+     * Alchemy's published costs — see \ItHealer\LaravelEvm\Services\Alchemy\ComputeUnits.
+     *
+     * Example: 'compute_units' => ['alchemy_getAssetTransfers' => 150, 'eth_call' => 26],
+     */
+    'compute_units' => [],
 
     /*
      * Wallet settings.
@@ -87,6 +111,76 @@ return [
     'webhook_handler' => \ItHealer\LaravelEvm\Webhook\EmptyWebhookHandler::class,
 
     /*
+     * Alchemy Notify (Address Activity Webhooks).
+     *
+     * Instead of (or in addition to) polling `evm:sync`, Alchemy can push a real-time
+     * notification whenever a watched address has on-chain activity. The package
+     * receives that push, verifies its HMAC signature and triggers a targeted
+     * AddressNetworkSync for the involved address — so the deposit detection,
+     * dedup and your `webhook_handler` keep working exactly as with polling,
+     * but only when something actually happens (drastically fewer Compute Units).
+     *
+     * Docs: https://www.alchemy.com/docs/reference/address-activity-webhook
+     */
+    'alchemy' => [
+        /*
+         * Notify Auth Token (dashboard.alchemy.com → Webhooks → top-right "AUTH TOKEN").
+         * This is NOT your RPC API key — it authorizes the Notify management API.
+         */
+        'auth_token' => env('EVM_ALCHEMY_NOTIFY_AUTH_TOKEN'),
+
+        /*
+         * Notify management API base URL.
+         */
+        'api_url' => 'https://dashboard.alchemy.com/api',
+
+        /*
+         * Inbound webhook receiver (the endpoint Alchemy POSTs notifications to).
+         */
+        'webhook' => [
+            /*
+             * Register the package route that receives Alchemy notifications.
+             * Disabled by default so the package adds no public route unless opted in.
+             */
+            'enabled' => (bool)env('EVM_ALCHEMY_WEBHOOK_ENABLED', false),
+
+            /*
+             * URI path the receiver listens on (no leading slash). It must match the
+             * webhook URL registered in Alchemy (see `url` below). Keep it outside any
+             * localized/auth route groups of your app — the signature is the auth.
+             */
+            'path' => env('EVM_ALCHEMY_WEBHOOK_PATH', 'evm/alchemy/webhook'),
+
+            /*
+             * Public URL registered in Alchemy when creating a webhook. Defaults to
+             * config('app.url') + path. Set explicitly behind proxies/CDNs.
+             */
+            'url' => env('EVM_ALCHEMY_WEBHOOK_URL'),
+
+            /*
+             * Extra middleware applied to the receiver route (e.g. a throttle).
+             */
+            'middleware' => [],
+        ],
+
+        /*
+         * Automatically add/remove an address in the matching Alchemy webhook when an
+         * EvmAddress is created/deleted. Only networks that already have a webhook
+         * (created via `evm:alchemy-setup`) are affected. Use `evm:alchemy-reconcile`
+         * for the authoritative full sync (e.g. after attaching a network to a wallet).
+         */
+        'auto_subscribe' => (bool)env('EVM_ALCHEMY_AUTO_SUBSCRIBE', false),
+
+        /*
+         * Queue used for the sync job triggered by an inbound webhook (null = default).
+         */
+        'queue' => [
+            'connection' => env('EVM_ALCHEMY_QUEUE_CONNECTION'),
+            'name' => env('EVM_ALCHEMY_QUEUE_NAME'),
+        ],
+    ],
+
+    /*
      * Set model class to allow more customization.
      *
      * Each model must be or extend the corresponding
@@ -102,5 +196,6 @@ return [
         'address_balance' => \ItHealer\LaravelEvm\Models\EvmAddressBalance::class,
         'transaction' => \ItHealer\LaravelEvm\Models\EvmTransaction::class,
         'deposit' => \ItHealer\LaravelEvm\Models\EvmDeposit::class,
+        'alchemy_webhook' => \ItHealer\LaravelEvm\Models\EvmAlchemyWebhook::class,
     ],
 ];

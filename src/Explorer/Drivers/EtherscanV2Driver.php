@@ -31,6 +31,11 @@ class EtherscanV2Driver extends BaseExplorerDriver
         $this->proxy = $this->formatProxy($proxy);
     }
 
+    public function creditsPerRequest(): int
+    {
+        return 0;
+    }
+
     public function request(array $params): mixed
     {
         $client = Http::asJson()

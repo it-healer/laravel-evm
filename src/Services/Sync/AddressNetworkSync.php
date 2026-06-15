@@ -2,7 +2,9 @@
 
 namespace ItHealer\LaravelEvm\Services\Sync;
 
+use Closure;
 use Illuminate\Support\Facades\App;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Str;
 use ItHealer\LaravelEvm\Api\Node\NodeApi;
@@ -68,7 +70,39 @@ class AddressNetworkSync extends BaseSync
         $webhookHandler = config('evm.webhook_handler');
         $this->webhookHandler = $webhookHandler ? App::make($webhookHandler) : null;
 
-        $this->blockNumber = $this->node->getLatestBlockNumber();
+        $this->blockNumber = $this->latestBlockNumber();
+    }
+
+    /**
+     * Latest block number, optionally cached per network for `evm.sync.block_cache_ttl`
+     * seconds so a multi-address run does not pay for one eth_blockNumber per address.
+     */
+    protected function latestBlockNumber(): int
+    {
+        $ttl = (int)config('evm.sync.block_cache_ttl', 0);
+
+        if ($ttl <= 0) {
+            return $this->node->getLatestBlockNumber();
+        }
+
+        return (int)Cache::remember(
+            'evm:latest-block:'.$this->network->id,
+            $ttl,
+            fn (): int => $this->node->getLatestBlockNumber(),
+        );
+    }
+
+    /**
+     * Counts an explorer request and the Compute Units it costs.
+     */
+    protected function explorerOnRequest(): Closure
+    {
+        $credits = $this->explorerApi->creditsPerRequest();
+
+        return function () use ($credits): void {
+            $this->explorer->increment('requests');
+            $this->explorer->recordCredits($credits);
+        };
     }
 
     public function run(): void
@@ -149,7 +183,7 @@ class AddressNetworkSync extends BaseSync
             address: $this->address->address,
             startBlock: $startBlock,
             perPage: 100,
-            onRequest: fn () => $this->explorer->increment('requests')
+            onRequest: $this->explorerOnRequest()
         );
 
         foreach ($paginator as $item) {
@@ -164,7 +198,7 @@ class AddressNetworkSync extends BaseSync
                 contract: null,
                 startBlock: $startBlock,
                 perPage: 100,
-                onRequest: fn () => $this->explorer->increment('requests')
+                onRequest: $this->explorerOnRequest()
             );
 
             foreach ($paginator as $item) {

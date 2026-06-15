@@ -70,6 +70,7 @@ trait Node
         return $network->nodes()
             ->where('worked', '=', true)
             ->where('available', '=', true)
+            ->orderByCredits()
             ->orderBy('requests')
             ->firstOrFail();
     }

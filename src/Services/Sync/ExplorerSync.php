@@ -4,6 +4,7 @@ namespace ItHealer\LaravelEvm\Services\Sync;
 
 use Illuminate\Support\Facades\Date;
 use ItHealer\LaravelEvm\Models\EvmExplorer;
+use ItHealer\LaravelEvm\Services\Alchemy\ComputeUnits;
 use ItHealer\LaravelEvm\Services\BaseSync;
 
 class ExplorerSync extends BaseSync
@@ -46,6 +47,9 @@ class ExplorerSync extends BaseSync
         }
 
         $this->explorer->increment('requests');
+        $this->explorer->recordCredits(
+            $this->explorer->api()->creditsPerRequest() > 0 ? ComputeUnits::cost('eth_blockNumber') : 0
+        );
         $this->explorer->update([
             'sync_at' => Date::now(),
             'worked' => true,

@@ -3,6 +3,7 @@
 namespace ItHealer\LaravelEvm\Api\Node;
 
 use Brick\Math\BigDecimal;
+use Closure;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
@@ -23,12 +24,16 @@ class NodeApi
     protected array $tokenDecimals = [];
     protected ?TxType $resolvedTxType = null;
 
+    /**
+     * @param  Closure(string $method): void|null  $onUsage  called once per RPC request with the method name
+     */
     public function __construct(
         protected string $baseURL,
         protected int $chainId,
         protected int $nativeDecimals = 18,
         ?string $proxy = null,
         protected ?TxType $txType = null,
+        protected ?Closure $onUsage = null,
     ) {
         $this->proxy = ProxyFormatter::format($proxy);
     }
@@ -88,6 +93,10 @@ class NodeApi
             'id' => 1,
         ]);
 
+        if ($this->onUsage) {
+            ($this->onUsage)($method);
+        }
+
         $result = $response->json();
 
         if (isset($result['error'])) {
@@ -138,9 +147,13 @@ class NodeApi
         return Hex::toInt($hex);
     }
 
-    public function getBalanceOfToken(string $address, string $contract): BigDecimal
+    /**
+     * Pass $decimals (e.g. the stored EvmToken decimals) to skip the extra
+     * decimals() eth_call and the Compute Units it costs on every balance read.
+     */
+    public function getBalanceOfToken(string $address, string $contract, ?int $decimals = null): BigDecimal
     {
-        $decimals = $this->tokenDecimals[$contract] ??= $this->getTokenDecimals($contract);
+        $decimals ??= $this->tokenDecimals[$contract] ??= $this->getTokenDecimals($contract);
 
         $data = '0x70a08231000000000000000000000000'.substr(Str::lower($address), 2);
         $balanceHex = $this->rpc('eth_call', [

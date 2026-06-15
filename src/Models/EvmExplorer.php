@@ -9,9 +9,12 @@ use ItHealer\LaravelEvm\Enums\ExplorerDriver;
 use ItHealer\LaravelEvm\Explorer\Contracts\ExplorerDriverInterface;
 use ItHealer\LaravelEvm\Explorer\ExplorerManager;
 use ItHealer\LaravelEvm\Facades\Evm;
+use ItHealer\LaravelEvm\Models\Concerns\TracksComputeUnits;
 
 class EvmExplorer extends Model
 {
+    use TracksComputeUnits;
+
     protected ?ExplorerDriverInterface $_api = null;
 
     protected $fillable = [
@@ -26,6 +29,8 @@ class EvmExplorer extends Model
         'sync_data',
         'requests',
         'requests_at',
+        'credits',
+        'credits_at',
         'worked',
         'available',
     ];
@@ -41,6 +46,8 @@ class EvmExplorer extends Model
             'sync_at' => 'datetime',
             'sync_data' => 'array',
             'requests_at' => 'date',
+            'credits' => 'integer',
+            'credits_at' => 'datetime',
             'worked' => 'boolean',
             'available' => 'boolean',
         ];

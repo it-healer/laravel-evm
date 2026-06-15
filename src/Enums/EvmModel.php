@@ -13,4 +13,5 @@ enum EvmModel: string
     case AddressBalance = 'address_balance';
     case Transaction = 'transaction';
     case Deposit = 'deposit';
+    case AlchemyWebhook = 'alchemy_webhook';
 }

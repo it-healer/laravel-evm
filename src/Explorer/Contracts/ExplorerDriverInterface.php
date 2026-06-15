@@ -38,4 +38,10 @@ interface ExplorerDriverInterface
     ): DTOPaginator;
 
     public function healthCheck(): bool;
+
+    /**
+     * Compute Units billed per underlying API request (0 for non-CU providers).
+     * Used to meter credits spent on the explorer.
+     */
+    public function creditsPerRequest(): int;
 }
