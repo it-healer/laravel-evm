@@ -15,9 +15,22 @@ use ItHealer\LaravelEvm\Services\AlchemyUrlFactory;
  */
 trait Alchemy
 {
-    public function alchemyNotify(): AlchemyNotifyClient
+    /**
+     * Notify client for a specific account token, or the configured default when null.
+     * Each webhook stores the token of the account it was created on, so operations
+     * always target the right Alchemy account even with several accounts in use.
+     */
+    public function alchemyNotify(?string $authToken = null): AlchemyNotifyClient
     {
-        return app(AlchemyNotifyClient::class);
+        if ($authToken === null || $authToken === '') {
+            return app(AlchemyNotifyClient::class);
+        }
+
+        return new AlchemyNotifyClient(
+            authToken: $authToken,
+            apiUrl: (string) config('evm.alchemy.api_url', 'https://dashboard.alchemy.com/api'),
+            proxy: config('evm.proxy'),
+        );
     }
 
     /**
@@ -39,8 +52,11 @@ trait Alchemy
 
     /**
      * Ensure an Alchemy webhook exists for the network, creating it on first call.
+     * The webhook is created on the given account token (or the configured default when
+     * null) and remembers it, so a single Alchemy account's webhook limit can be spread
+     * across several accounts by choosing a different token per network.
      */
-    public function ensureAlchemyWebhook(EvmNetwork|int|string $network): EvmAlchemyWebhook
+    public function ensureAlchemyWebhook(EvmNetwork|int|string $network, ?string $authToken = null, ?string $accountRef = null): EvmAlchemyWebhook
     {
         $network = $this->findNetwork($network);
 
@@ -60,7 +76,7 @@ trait Alchemy
             );
         }
 
-        $result = $this->alchemyNotify()->createWebhook($alchemyNetwork, $this->alchemyWebhookUrl());
+        $result = $this->alchemyNotify($authToken)->createWebhook($alchemyNetwork, $this->alchemyWebhookUrl());
 
         /** @var class-string<EvmAlchemyWebhook> $model */
         $model = $this->getModel(EvmModel::AlchemyWebhook);
@@ -69,20 +85,28 @@ trait Alchemy
             'network_id' => $network->id,
             'webhook_id' => $result['id'],
             'signing_key' => $result['signing_key'],
+            'auth_token' => $authToken,
+            'account_ref' => $accountRef,
             'addresses_count' => 0,
             'active' => true,
         ]);
     }
 
     /**
-     * Add an address to the network's Alchemy webhook (creating the webhook if needed).
+     * Add an address to the network's Alchemy webhook. No-op if the network has no webhook
+     * yet (the webhook is provisioned explicitly via ensureAlchemyWebhook with a chosen account).
      */
     public function subscribeAlchemyAddress(EvmAddress|string $address, EvmNetwork|int|string $network): void
     {
-        $webhook = $this->ensureAlchemyWebhook($network);
+        $webhook = $this->findAlchemyWebhook($network);
+
+        if (!$webhook) {
+            return;
+        }
+
         $value = $address instanceof EvmAddress ? $address->address : $address;
 
-        $this->alchemyNotify()->updateAddresses($webhook->webhook_id, add: [$value]);
+        $this->alchemyNotify($webhook->auth_token)->updateAddresses($webhook->webhook_id, add: [$value]);
         $webhook->increment('addresses_count');
     }
 
@@ -99,7 +123,7 @@ trait Alchemy
 
         $value = $address instanceof EvmAddress ? $address->address : $address;
 
-        $this->alchemyNotify()->updateAddresses($webhook->webhook_id, remove: [$value]);
+        $this->alchemyNotify($webhook->auth_token)->updateAddresses($webhook->webhook_id, remove: [$value]);
         $webhook->decrement('addresses_count');
     }
 
@@ -109,7 +133,7 @@ trait Alchemy
      *
      * @return array{added: list<string>, removed: list<string>}
      */
-    public function reconcileAlchemyWebhook(EvmNetwork|int|string $network): array
+    public function reconcileAlchemyWebhook(EvmNetwork|int|string $network, ?string $authToken = null, ?string $accountRef = null): array
     {
         $network = $this->findNetwork($network);
 
@@ -117,19 +141,20 @@ trait Alchemy
             throw new \InvalidArgumentException('Network not found.');
         }
 
-        $webhook = $this->ensureAlchemyWebhook($network);
+        $webhook = $this->ensureAlchemyWebhook($network, $authToken, $accountRef);
+        $notify = $this->alchemyNotify($webhook->auth_token);
 
         $local = $this->alchemyTrackedAddresses($network);
         $localLower = $local->map(fn (string $a) => Str::lower($a));
 
-        $remote = collect($this->alchemyNotify()->getAddresses($webhook->webhook_id));
+        $remote = collect($notify->getAddresses($webhook->webhook_id));
         $remoteLower = $remote->map(fn (string $a) => Str::lower($a));
 
         $add = $local->filter(fn (string $a) => !$remoteLower->contains(Str::lower($a)))->values();
         $remove = $remote->filter(fn (string $a) => !$localLower->contains(Str::lower($a)))->values();
 
         if ($add->isNotEmpty() || $remove->isNotEmpty()) {
-            $this->alchemyNotify()->updateAddresses($webhook->webhook_id, $add->all(), $remove->all());
+            $notify->updateAddresses($webhook->webhook_id, $add->all(), $remove->all());
         }
 
         $webhook->update(['addresses_count' => $local->count()]);

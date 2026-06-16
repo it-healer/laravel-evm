@@ -13,6 +13,8 @@ use ItHealer\LaravelEvm\Facades\Evm;
  * @property int $network_id
  * @property string $webhook_id
  * @property string $signing_key
+ * @property string|null $auth_token
+ * @property string|null $account_ref
  * @property int $addresses_count
  * @property bool $active
  */
@@ -22,18 +24,22 @@ class EvmAlchemyWebhook extends Model
         'network_id',
         'webhook_id',
         'signing_key',
+        'auth_token',
+        'account_ref',
         'addresses_count',
         'active',
     ];
 
     protected $hidden = [
         'signing_key',
+        'auth_token',
     ];
 
     protected function casts(): array
     {
         return [
             'signing_key' => 'encrypted',
+            'auth_token' => 'encrypted',
             'addresses_count' => 'integer',
             'active' => 'boolean',
         ];
