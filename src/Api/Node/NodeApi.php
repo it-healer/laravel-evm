@@ -57,12 +57,14 @@ class NodeApi
      *
      * @param  callable(int $nonce): string  $buildRawTransaction  возвращает подписанную raw-транзакцию ('0x...')
      */
-    protected function sendWithSafeNonce(string $from, callable $buildRawTransaction): string
+    protected function sendWithSafeNonce(string $from, callable $buildRawTransaction, ?int &$usedNonce = null): string
     {
         $from = Str::lower($from);
         $lock = Cache::lock("evm:transfer-lock:{$this->chainId}:{$from}", 60);
 
-        return $lock->block(60, function () use ($from, $buildRawTransaction): string {
+        $nonce = null;
+
+        $txid = $lock->block(60, function () use ($from, $buildRawTransaction, &$nonce): string {
             $chainNonce = Hex::toInt($this->rpc('eth_getTransactionCount', [$from, 'pending']));
             $localNonce = (int) Cache::get("evm:next-nonce:{$this->chainId}:{$from}", 0);
             $nonce = max($chainNonce, $localNonce);
@@ -74,6 +76,10 @@ class NodeApi
 
             return $txid;
         });
+
+        $usedNonce = $nonce;
+
+        return $txid;
     }
 
     public function rpc(string $method, array $params = []): mixed
@@ -167,6 +173,31 @@ class NodeApi
     public function getLatestBlockNumber(): int
     {
         return Hex::toInt($this->rpc('eth_blockNumber'));
+    }
+
+    /**
+     * Number of confirmed (mined) transactions sent from the address.
+     * A pending transfer whose nonce is below this value has either been
+     * mined or replaced by another transaction at the same nonce.
+     */
+    public function getConfirmedNonce(string $address): int
+    {
+        return Hex::toInt($this->rpc('eth_getTransactionCount', [Str::lower($address), 'latest']));
+    }
+
+    /**
+     * Block number of a mined transaction, or null when it is not (yet) mined
+     * (still pending in the mempool, dropped, or replaced).
+     */
+    public function getTransactionBlockNumber(string $txid): ?int
+    {
+        $receipt = $this->rpc('eth_getTransactionReceipt', [$txid]);
+
+        if (! is_array($receipt) || ! isset($receipt['blockNumber'])) {
+            return null;
+        }
+
+        return Hex::toInt($receipt['blockNumber']);
     }
 
     public function getLatestBlock(): array
@@ -362,11 +393,13 @@ class NodeApi
             data: '',
             preview: $preview,
             privateKey: $privateKey,
+            nonce: $nonce,
         );
 
         return TransferDTO::make([
             ...$preview->toArray(),
             'txid' => $txid,
+            'nonce' => $nonce,
         ]);
     }
 
@@ -459,11 +492,13 @@ class NodeApi
             data: $preview->data(),
             preview: $preview,
             privateKey: $privateKey,
+            nonce: $nonce,
         );
 
         return TransferDTO::make([
             ...$preview->toArray(),
             'txid' => $txid,
+            'nonce' => $nonce,
         ]);
     }
 
@@ -559,11 +594,13 @@ class NodeApi
             data: $preview->data(),
             preview: $preview,
             privateKey: $privateKey,
+            nonce: $nonce,
         );
 
         return TransferDTO::make([
             ...$preview->toArray(),
             'txid' => $txid,
+            'nonce' => $nonce,
         ]);
     }
 
@@ -620,6 +657,7 @@ class NodeApi
         string $data,
         PreviewTransferDTO $preview,
         string $privateKey,
+        ?int &$nonce = null,
     ): string {
         $txType = $preview->txType();
         $signer = $this->signer($txType);
@@ -653,6 +691,6 @@ class NodeApi
                 fees: $signerFees,
                 privateKey: $privateKey,
             );
-        });
+        }, $nonce);
     }
 }

@@ -149,6 +149,60 @@ class EvmWallet extends Model
         return $totals;
     }
 
+    /**
+     * Available native balance of all wallet addresses in the network:
+     * confirmed balance minus broadcast-but-unconfirmed outgoing transfers (amount + fees).
+     */
+    public function availableBalanceForNetwork(EvmNetwork|int $network): BigDecimal
+    {
+        $networkId = $network instanceof EvmNetwork ? $network->id : $network;
+
+        $balances = $this->balances()->where('network_id', $networkId)->get();
+        $pending = \ItHealer\LaravelEvm\Services\PendingBalance::forAddresses(
+            $networkId,
+            $balances->map(fn (EvmAddressBalance $row) => (string) $row->address?->address)->filter()->all()
+        );
+
+        return $balances->reduce(function (BigDecimal $carry, EvmAddressBalance $row) use ($pending) {
+            $key = \Illuminate\Support\Str::lower((string) $row->address?->address);
+            $rowPending = $pending[$key] ?? ['native' => BigDecimal::zero(), 'fee' => BigDecimal::zero(), 'tokens' => []];
+
+            return $carry->plus(\ItHealer\LaravelEvm\Services\PendingBalance::availableNative(
+                BigDecimal::of($row->balance ?? 0),
+                $rowPending
+            ));
+        }, BigDecimal::zero());
+    }
+
+    /**
+     * Aggregated available token balances of all wallet addresses in the network.
+     *
+     * @return array<string, BigDecimal> map of contract address => available balance
+     */
+    public function availableTokensForNetwork(EvmNetwork|int $network): array
+    {
+        $networkId = $network instanceof EvmNetwork ? $network->id : $network;
+
+        $balances = $this->balances()->where('network_id', $networkId)->get();
+        $pending = \ItHealer\LaravelEvm\Services\PendingBalance::forAddresses(
+            $networkId,
+            $balances->map(fn (EvmAddressBalance $row) => (string) $row->address?->address)->filter()->all()
+        );
+
+        $totals = [];
+        foreach ($balances as $row) {
+            $key = \Illuminate\Support\Str::lower((string) $row->address?->address);
+            $rowPending = $pending[$key] ?? ['native' => BigDecimal::zero(), 'fee' => BigDecimal::zero(), 'tokens' => []];
+
+            foreach ($row->tokens ?? [] as $contract => $amount) {
+                $available = \ItHealer\LaravelEvm\Services\PendingBalance::availableToken($contract, $amount, $rowPending);
+                $totals[$contract] = ($totals[$contract] ?? BigDecimal::zero())->plus($available);
+            }
+        }
+
+        return $totals;
+    }
+
     public function getHasPasswordAttribute(): bool
     {
         return !empty($this->attributes['password']);

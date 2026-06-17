@@ -61,6 +61,20 @@ return [
     ],
 
     /*
+     * Broadcast-but-unconfirmed outgoing transfers are subtracted from the confirmed
+     * balance to show a truthful "available" balance. They leave the pending set once
+     * mined (block_number) or once reconciled by nonce (mined/replaced) during sync.
+     * `ttl_minutes` is a last-resort safety net: a pending transfer older than this many
+     * minutes that never resolved stops being subtracted (null disables the TTL and relies
+     * solely on nonce reconciliation).
+     */
+    'pending' => [
+        'ttl_minutes' => env('EVM_PENDING_TTL_MINUTES') !== null
+            ? (int)env('EVM_PENDING_TTL_MINUTES')
+            : null,
+    ],
+
+    /*
      * Compute Unit (CU) cost overrides per RPC method, used to meter `credits` spent on
      * each node/explorer (reset monthly) and to pick the least-used one. Defaults mirror
      * Alchemy's published costs — see \ItHealer\LaravelEvm\Services\Alchemy\ComputeUnits.

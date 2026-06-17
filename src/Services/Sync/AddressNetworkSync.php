@@ -123,7 +123,64 @@ class AddressNetworkSync extends BaseSync
             ->balance()
             ->tokenBalances()
             ->transactions()
+            ->reconcilePending()
             ->runWebhooks();
+    }
+
+    /**
+     * Resolve broadcast-but-still-pending outgoing transfers so a stuck/replaced
+     * transaction stops being subtracted from the available balance forever.
+     *
+     * A pending transfer whose nonce is below the confirmed account nonce was
+     * already settled at that nonce: either our transaction mined (we stamp its
+     * block_number) or it was replaced/dropped (we mark it dropped_at). Either way
+     * it leaves the "pending outgoing" set and the available balance converges to
+     * the confirmed on-chain balance. An optional TTL is a last-resort safety net.
+     */
+    protected function reconcilePending(): static
+    {
+        /** @var class-string<\ItHealer\LaravelEvm\Models\EvmTransaction> $transactionModel */
+        $transactionModel = Evm::getModel(EvmModel::Transaction);
+
+        $pending = $transactionModel::query()
+            ->pendingOutgoing()
+            ->where('network_id', $this->network->id)
+            ->where('address', $this->address->address)
+            ->get();
+
+        if ($pending->isEmpty()) {
+            return $this;
+        }
+
+        $confirmedNonce = $this->nodeApi->getConfirmedNonce($this->address->address);
+
+        $ttlMinutes = config('evm.pending.ttl_minutes');
+        $ttlThreshold = $ttlMinutes !== null
+            ? Date::now()->copy()->subMinutes((int) $ttlMinutes)
+            : null;
+
+        foreach ($pending as $transaction) {
+            if ($transaction->nonce !== null && $transaction->nonce < $confirmedNonce) {
+                $blockNumber = $this->nodeApi->getTransactionBlockNumber($transaction->txid);
+
+                if ($blockNumber !== null) {
+                    $this->log("Pending transfer {$transaction->txid} confirmed in block {$blockNumber}.", 'success');
+                    $transaction->update(['block_number' => $blockNumber]);
+                } else {
+                    $this->log("Pending transfer {$transaction->txid} dropped/replaced (nonce {$transaction->nonce} < {$confirmedNonce}).", 'success');
+                    $transaction->update(['dropped_at' => Date::now()]);
+                }
+
+                continue;
+            }
+
+            if ($ttlThreshold !== null && $transaction->time_at && $transaction->time_at < $ttlThreshold) {
+                $this->log("Pending transfer {$transaction->txid} expired by TTL.", 'success');
+                $transaction->update(['dropped_at' => Date::now()]);
+            }
+        }
+
+        return $this;
     }
 
     /**

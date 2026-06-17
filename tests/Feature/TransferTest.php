@@ -58,7 +58,8 @@ it('sends a native transfer as EIP-1559 when base fee is present', function () {
     expect($result->txid())->toBe('0xtxid123')
         ->and($result->txType())->toBe(TxType::Eip1559)
         ->and($result->maxFeePerGas()->isEqualTo('2100000000'))->toBeTrue() // 2 * baseFee + priority
-        ->and($result->fee()->isEqualTo('0.0000441'))->toBeTrue(); // maxFee * 21000 / 1e18
+        ->and($result->fee()->isEqualTo('0.0000441'))->toBeTrue() // maxFee * 21000 / 1e18
+        ->and($result->nonce())->toBe(5); // eth_getTransactionCount(pending) = 0x5
 
     Http::assertSent(function ($request) {
         $data = $request->data();
