@@ -229,6 +229,44 @@ it('keeps a still-next pending transfer the node no longer knows within the grac
         ->and($tx->fresh()->block_number)->toBeNull();
 });
 
+it('drops a legacy pending transfer with no nonce the node no longer knows', function () {
+    [$network, $address] = pendingSetup([
+        'eth_getTransactionByHash' => null, // node has never seen it
+    ]);
+
+    $tx = makePending($network->id, $address->address, [
+        'txid' => '0xlegacy',
+        'amount' => '0.5',
+        'fee' => '0.01',
+        // no nonce — legacy row created before nonce tracking
+        'time_at' => now()->subMonths(2),
+    ]);
+
+    (new AddressNetworkSync($address, $network))->run();
+
+    expect($tx->fresh()->dropped_at)->not->toBeNull()
+        ->and($tx->fresh()->block_number)->toBeNull();
+});
+
+it('stamps a legacy pending transfer with no nonce found mined', function () {
+    [$network, $address] = pendingSetup([
+        'eth_getTransactionByHash' => ['hash' => '0xlegacymined', 'blockNumber' => '0x90'],
+        'eth_getTransactionReceipt' => ['blockNumber' => '0x90', 'status' => '0x1'],
+    ]);
+
+    $tx = makePending($network->id, $address->address, [
+        'txid' => '0xlegacymined',
+        'amount' => '0.5',
+        'fee' => '0.01',
+        'time_at' => now()->subMonths(2),
+    ]);
+
+    (new AddressNetworkSync($address, $network))->run();
+
+    expect($tx->fresh()->block_number)->toBe(144)
+        ->and($tx->fresh()->dropped_at)->toBeNull();
+});
+
 it('flags a pending transfer mined but reverted (nonce passed)', function () {
     [$network, $address] = pendingSetup([
         'eth_getTransactionCount' => '0x6', // confirmed nonce 6 > pending nonce 5

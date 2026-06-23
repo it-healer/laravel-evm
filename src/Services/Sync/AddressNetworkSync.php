@@ -134,9 +134,10 @@ class AddressNetworkSync extends BaseSync
      *
      *  - nonce already below the confirmed account nonce: the slot was settled, so the
      *    transfer was mined (stamp block_number) or replaced/dropped (mark dropped_at).
-     *  - nonce still next (>= confirmed): ask the node whether it still knows the txid —
-     *    a mined block stamps it, an unknown txid (after a short grace) means it was
-     *    evicted from the mempool and is dropped, otherwise it is genuinely stuck and kept.
+     *  - nonce still next (>= confirmed) or never recorded (legacy rows with nonce = null):
+     *    ask the node whether it still knows the txid — a mined block stamps it, an unknown
+     *    txid (after a short grace) means it was evicted from the mempool and is dropped,
+     *    otherwise it is genuinely stuck and kept.
      *  - `ttl_minutes` remains a last-resort fallback.
      */
     protected function reconcilePending(): static
@@ -181,25 +182,27 @@ class AddressNetworkSync extends BaseSync
                 continue;
             }
 
-            if ($transaction->nonce !== null) {
-                $known = $this->nodeApi->getTransactionByHash($transaction->txid);
+            // Either the nonce is still next (>= confirmed) or it was never recorded
+            // (legacy rows have nonce = null). Ask the node directly whether it still knows
+            // the txid: a mined block stamps it, an unknown txid (past the grace) was
+            // evicted from the mempool, otherwise it is still in flight and kept.
+            $known = $this->nodeApi->getTransactionByHash($transaction->txid);
 
-                if ($known !== null && $known['blockNumber'] !== null) {
-                    $receipt = $this->nodeApi->getTransactionReceipt($transaction->txid);
-                    $failed = $receipt['failed'] ?? false;
-                    $this->log("Pending transfer {$transaction->txid} confirmed in block {$known['blockNumber']}".($failed ? ' (failed)' : '').'.', 'success');
-                    $transaction->update(['block_number' => $known['blockNumber'], 'failed' => $failed]);
+            if ($known !== null && $known['blockNumber'] !== null) {
+                $receipt = $this->nodeApi->getTransactionReceipt($transaction->txid);
+                $failed = $receipt['failed'] ?? false;
+                $this->log("Pending transfer {$transaction->txid} confirmed in block {$known['blockNumber']}".($failed ? ' (failed)' : '').'.', 'success');
+                $transaction->update(['block_number' => $known['blockNumber'], 'failed' => $failed]);
 
-                    continue;
-                }
+                continue;
+            }
 
-                if ($known === null
-                    && (! $transaction->time_at || $transaction->time_at < $dropGraceThreshold)) {
-                    $this->log("Pending transfer {$transaction->txid} evicted from the mempool, dropping.", 'success');
-                    $transaction->update(['dropped_at' => $now]);
+            if ($known === null
+                && (! $transaction->time_at || $transaction->time_at < $dropGraceThreshold)) {
+                $this->log("Pending transfer {$transaction->txid} evicted from the mempool, dropping.", 'success');
+                $transaction->update(['dropped_at' => $now]);
 
-                    continue;
-                }
+                continue;
             }
 
             if ($ttlThreshold !== null && $transaction->time_at && $transaction->time_at < $ttlThreshold) {
