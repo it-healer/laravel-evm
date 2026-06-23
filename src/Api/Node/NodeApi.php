@@ -200,6 +200,28 @@ class NodeApi
         return Hex::toInt($receipt['blockNumber']);
     }
 
+    /**
+     * Whether the node still knows the transaction. Returns the block number when mined,
+     * a null block number while it is still in the mempool, or null when the node has
+     * never seen it (dropped/evicted from the mempool and never mined).
+     *
+     * @return array{blockNumber: ?int}|null
+     */
+    public function getTransactionByHash(string $txid): ?array
+    {
+        $tx = $this->rpc('eth_getTransactionByHash', [$txid]);
+
+        if (! is_array($tx)) {
+            return null;
+        }
+
+        $blockNumber = isset($tx['blockNumber']) && $tx['blockNumber'] !== null
+            ? Hex::toInt($tx['blockNumber'])
+            : null;
+
+        return ['blockNumber' => $blockNumber];
+    }
+
     public function getLatestBlock(): array
     {
         return $this->rpc('eth_getBlockByNumber', ['latest', false]);

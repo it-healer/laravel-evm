@@ -63,15 +63,19 @@ return [
     /*
      * Broadcast-but-unconfirmed outgoing transfers are subtracted from the confirmed
      * balance to show a truthful "available" balance. They leave the pending set once
-     * mined (block_number) or once reconciled by nonce (mined/replaced) during sync.
-     * `ttl_minutes` is a last-resort safety net: a pending transfer older than this many
-     * minutes that never resolved stops being subtracted (null disables the TTL and relies
-     * solely on nonce reconciliation).
+     * mined (block_number) or reconciled during sync: a transfer whose nonce is already
+     * confirmed was mined or replaced, while a still-next transfer the node no longer
+     * knows (eth_getTransactionByHash returns null) was evicted from the mempool. The
+     * node is asked only after `dropped_grace_seconds` so a freshly broadcast transfer
+     * the node has not yet registered is not dropped prematurely. `ttl_minutes` is a
+     * last-resort safety net (null relies solely on node reconciliation).
      */
     'pending' => [
         'ttl_minutes' => env('EVM_PENDING_TTL_MINUTES') !== null
             ? (int)env('EVM_PENDING_TTL_MINUTES')
             : null,
+
+        'dropped_grace_seconds' => (int)env('EVM_PENDING_DROPPED_GRACE_SECONDS', 60),
     ],
 
     /*
