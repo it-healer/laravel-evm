@@ -176,6 +176,7 @@ it('reconciles a stuck/replaced pending transfer by marking it dropped', functio
 it('keeps subtracting a pending transfer whose nonce is still unconfirmed', function () {
     [$network, $address] = pendingSetup([
         'eth_getTransactionCount' => '0x5', // confirmed nonce 5 == pending nonce 5 → not yet passed
+        'eth_getTransactionByHash' => ['hash' => '0xinflight', 'blockNumber' => null], // still in mempool
     ]);
 
     $tx = makePending($network->id, $address->address, ['txid' => '0xinflight', 'amount' => '0.5', 'fee' => '0.01', 'nonce' => 5]);
@@ -184,4 +185,60 @@ it('keeps subtracting a pending transfer whose nonce is still unconfirmed', func
 
     expect($tx->fresh()->dropped_at)->toBeNull()
         ->and($tx->fresh()->block_number)->toBeNull();
+});
+
+it('drops a still-next pending transfer the node no longer knows after the grace', function () {
+    [$network, $address] = pendingSetup([
+        'eth_getTransactionCount' => '0x5', // confirmed nonce 5 == pending nonce 5 → still next
+        'eth_getTransactionByHash' => null, // node has never seen it → evicted from the mempool
+    ]);
+
+    $tx = makePending($network->id, $address->address, [
+        'txid' => '0xevicted',
+        'amount' => '0.5',
+        'fee' => '0.01',
+        'nonce' => 5,
+        'time_at' => now()->subMinutes(10), // older than the dropped grace
+    ]);
+
+    (new AddressNetworkSync($address, $network))->run();
+
+    expect($tx->fresh()->dropped_at)->not->toBeNull()
+        ->and($tx->fresh()->block_number)->toBeNull();
+
+    expect((string) $address->balanceForNetwork($network)->fresh()->available_balance)->toBe('2');
+});
+
+it('keeps a still-next pending transfer the node no longer knows within the grace', function () {
+    [$network, $address] = pendingSetup([
+        'eth_getTransactionCount' => '0x5',
+        'eth_getTransactionByHash' => null, // not seen yet — but just broadcast
+    ]);
+
+    $tx = makePending($network->id, $address->address, [
+        'txid' => '0xfresh',
+        'amount' => '0.5',
+        'fee' => '0.01',
+        'nonce' => 5,
+        'time_at' => now(), // within the dropped grace → do not drop prematurely
+    ]);
+
+    (new AddressNetworkSync($address, $network))->run();
+
+    expect($tx->fresh()->dropped_at)->toBeNull()
+        ->and($tx->fresh()->block_number)->toBeNull();
+});
+
+it('stamps a still-next pending transfer found mined via getTransactionByHash', function () {
+    [$network, $address] = pendingSetup([
+        'eth_getTransactionCount' => '0x5', // confirmed nonce 5 == pending nonce 5
+        'eth_getTransactionByHash' => ['hash' => '0xmined2', 'blockNumber' => '0x90'], // 144
+    ]);
+
+    $tx = makePending($network->id, $address->address, ['txid' => '0xmined2', 'amount' => '0.5', 'fee' => '0.01', 'nonce' => 5]);
+
+    (new AddressNetworkSync($address, $network))->run();
+
+    expect($tx->fresh()->block_number)->toBe(144)
+        ->and($tx->fresh()->dropped_at)->toBeNull();
 });
