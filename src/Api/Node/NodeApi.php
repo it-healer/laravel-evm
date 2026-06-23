@@ -201,6 +201,27 @@ class NodeApi
     }
 
     /**
+     * Block number and execution outcome of a mined transaction, or null when it is not
+     * (yet) mined. `failed` is true when the receipt status is 0x0 (the transaction was
+     * included in a block but reverted / ran out of gas).
+     *
+     * @return array{blockNumber: int, failed: bool}|null
+     */
+    public function getTransactionReceipt(string $txid): ?array
+    {
+        $receipt = $this->rpc('eth_getTransactionReceipt', [$txid]);
+
+        if (! is_array($receipt) || ! isset($receipt['blockNumber'])) {
+            return null;
+        }
+
+        return [
+            'blockNumber' => Hex::toInt($receipt['blockNumber']),
+            'failed' => isset($receipt['status']) && Hex::toInt($receipt['status']) === 0,
+        ];
+    }
+
+    /**
      * Whether the node still knows the transaction. Returns the block number when mined,
      * a null block number while it is still in the mempool, or null when the node has
      * never seen it (dropped/evicted from the mempool and never mined).

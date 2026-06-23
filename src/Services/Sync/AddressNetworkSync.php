@@ -168,11 +168,11 @@ class AddressNetworkSync extends BaseSync
 
         foreach ($pending as $transaction) {
             if ($transaction->nonce !== null && $transaction->nonce < $confirmedNonce) {
-                $blockNumber = $this->nodeApi->getTransactionBlockNumber($transaction->txid);
+                $receipt = $this->nodeApi->getTransactionReceipt($transaction->txid);
 
-                if ($blockNumber !== null) {
-                    $this->log("Pending transfer {$transaction->txid} confirmed in block {$blockNumber}.", 'success');
-                    $transaction->update(['block_number' => $blockNumber]);
+                if ($receipt !== null) {
+                    $this->log("Pending transfer {$transaction->txid} confirmed in block {$receipt['blockNumber']}".($receipt['failed'] ? ' (failed)' : '').'.', 'success');
+                    $transaction->update(['block_number' => $receipt['blockNumber'], 'failed' => $receipt['failed']]);
                 } else {
                     $this->log("Pending transfer {$transaction->txid} dropped/replaced (nonce {$transaction->nonce} < {$confirmedNonce}).", 'success');
                     $transaction->update(['dropped_at' => $now]);
@@ -185,8 +185,10 @@ class AddressNetworkSync extends BaseSync
                 $known = $this->nodeApi->getTransactionByHash($transaction->txid);
 
                 if ($known !== null && $known['blockNumber'] !== null) {
-                    $this->log("Pending transfer {$transaction->txid} confirmed in block {$known['blockNumber']}.", 'success');
-                    $transaction->update(['block_number' => $known['blockNumber']]);
+                    $receipt = $this->nodeApi->getTransactionReceipt($transaction->txid);
+                    $failed = $receipt['failed'] ?? false;
+                    $this->log("Pending transfer {$transaction->txid} confirmed in block {$known['blockNumber']}".($failed ? ' (failed)' : '').'.', 'success');
+                    $transaction->update(['block_number' => $known['blockNumber'], 'failed' => $failed]);
 
                     continue;
                 }

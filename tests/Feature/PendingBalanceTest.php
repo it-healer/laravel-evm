@@ -229,6 +229,50 @@ it('keeps a still-next pending transfer the node no longer knows within the grac
         ->and($tx->fresh()->block_number)->toBeNull();
 });
 
+it('flags a pending transfer mined but reverted (nonce passed)', function () {
+    [$network, $address] = pendingSetup([
+        'eth_getTransactionCount' => '0x6', // confirmed nonce 6 > pending nonce 5
+        'eth_getTransactionReceipt' => ['blockNumber' => '0x90', 'status' => '0x0'], // mined, reverted
+    ]);
+
+    $tx = makePending($network->id, $address->address, ['txid' => '0xreverted', 'amount' => '0.5', 'fee' => '0.01', 'nonce' => 5]);
+
+    (new AddressNetworkSync($address, $network))->run();
+
+    expect($tx->fresh()->block_number)->toBe(144)
+        ->and($tx->fresh()->failed)->toBeTrue()
+        ->and($tx->fresh()->dropped_at)->toBeNull();
+});
+
+it('flags a still-next pending transfer mined but reverted via getTransactionByHash', function () {
+    [$network, $address] = pendingSetup([
+        'eth_getTransactionCount' => '0x5', // confirmed nonce 5 == pending nonce 5
+        'eth_getTransactionByHash' => ['hash' => '0xrev2', 'blockNumber' => '0x90'],
+        'eth_getTransactionReceipt' => ['blockNumber' => '0x90', 'status' => '0x0'],
+    ]);
+
+    $tx = makePending($network->id, $address->address, ['txid' => '0xrev2', 'amount' => '0.5', 'fee' => '0.01', 'nonce' => 5]);
+
+    (new AddressNetworkSync($address, $network))->run();
+
+    expect($tx->fresh()->block_number)->toBe(144)
+        ->and($tx->fresh()->failed)->toBeTrue();
+});
+
+it('does not flag a successfully mined pending transfer as failed', function () {
+    [$network, $address] = pendingSetup([
+        'eth_getTransactionCount' => '0x6',
+        'eth_getTransactionReceipt' => ['blockNumber' => '0x90', 'status' => '0x1'], // success
+    ]);
+
+    $tx = makePending($network->id, $address->address, ['txid' => '0xok', 'amount' => '0.5', 'fee' => '0.01', 'nonce' => 5]);
+
+    (new AddressNetworkSync($address, $network))->run();
+
+    expect($tx->fresh()->block_number)->toBe(144)
+        ->and($tx->fresh()->failed)->toBeFalse();
+});
+
 it('stamps a still-next pending transfer found mined via getTransactionByHash', function () {
     [$network, $address] = pendingSetup([
         'eth_getTransactionCount' => '0x5', // confirmed nonce 5 == pending nonce 5
