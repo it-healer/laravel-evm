@@ -122,6 +122,7 @@ class EvmWallet extends Model
         $networkId = $network instanceof EvmNetwork ? $network->id : $network;
 
         return $this->balances()
+            ->where('available', true)
             ->where('network_id', $networkId)
             ->get()
             ->reduce(
@@ -140,7 +141,7 @@ class EvmWallet extends Model
         $networkId = $network instanceof EvmNetwork ? $network->id : $network;
 
         $totals = [];
-        foreach ($this->balances()->where('network_id', $networkId)->get() as $balance) {
+        foreach ($this->balances()->where('available', true)->where('network_id', $networkId)->get() as $balance) {
             foreach ($balance->tokens ?? [] as $contract => $amount) {
                 $totals[$contract] = ($totals[$contract] ?? BigDecimal::zero())->plus($amount);
             }
@@ -157,7 +158,7 @@ class EvmWallet extends Model
     {
         $networkId = $network instanceof EvmNetwork ? $network->id : $network;
 
-        $balances = $this->balances()->where('network_id', $networkId)->get();
+        $balances = $this->balances()->where('available', true)->where('network_id', $networkId)->get();
         $pending = \ItHealer\LaravelEvm\Services\PendingBalance::forAddresses(
             $networkId,
             $balances->map(fn (EvmAddressBalance $row) => (string) $row->address?->address)->filter()->all()
@@ -183,7 +184,7 @@ class EvmWallet extends Model
     {
         $networkId = $network instanceof EvmNetwork ? $network->id : $network;
 
-        $balances = $this->balances()->where('network_id', $networkId)->get();
+        $balances = $this->balances()->where('available', true)->where('network_id', $networkId)->get();
         $pending = \ItHealer\LaravelEvm\Services\PendingBalance::forAddresses(
             $networkId,
             $balances->map(fn (EvmAddressBalance $row) => (string) $row->address?->address)->filter()->all()
