@@ -372,6 +372,18 @@ vendor/bin/pest
 Деривация адресов и подпись транзакций (legacy + EIP-1559) проверяются по векторам, сгенерированным
 ethers.js; драйверы обозревателей и синхронизация — на HTTP-фейках.
 
+## Заказная разработка и контакты / Custom development & contacts
+
+**RU** — Нужен новый проект «под ключ» или интеграция этих модулей в существующее приложение? Свяжитесь с разработчиком напрямую — доступны заказная разработка, интеграция модулей и поддержка.
+
+**EN** — Need a new project built from scratch, or these modules integrated into your existing application? Contact the developer directly — custom development, module integration and ongoing support are available.
+
+- 🌐 Сайт / Website: [it-healer.com](https://it-healer.com)
+- ✈️ Telegram: [@biodynamist](https://t.me/biodynamist) · +90 551 629 47 16
+- 📱 WhatsApp: [+90 551 629 47 16](https://wa.me/905516294716)
+- 📧 Email: [info@it-healer.com](mailto:info@it-healer.com)
+- 🐛 Баг-репорты / Issues: [GitHub Issues](https://github.com/it-healer/laravel-evm/issues)
+
 ## Лицензия
 
 MIT

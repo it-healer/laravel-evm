@@ -368,6 +368,18 @@ vendor/bin/pest
 Address derivation and transaction signing (legacy + EIP-1559) are verified against
 ethers.js-generated vectors, explorer drivers and sync against HTTP fakes.
 
+## Custom development & contacts / Заказная разработка и контакты
+
+**EN** — Need a new project built from scratch, or these modules integrated into your existing application? Contact the developer directly — custom development, module integration and ongoing support are available.
+
+**RU** — Нужен новый проект «под ключ» или интеграция этих модулей в существующее приложение? Свяжитесь с разработчиком напрямую — доступны заказная разработка, интеграция модулей и поддержка.
+
+- 🌐 Website / Сайт: [it-healer.com](https://it-healer.com)
+- ✈️ Telegram: [@biodynamist](https://t.me/biodynamist) · +90 551 629 47 16
+- 📱 WhatsApp: [+90 551 629 47 16](https://wa.me/905516294716)
+- 📧 Email: [info@it-healer.com](mailto:info@it-healer.com)
+- 🐛 Issues / Баг-репорты: [GitHub Issues](https://github.com/it-healer/laravel-evm/issues)
+
 ## License
 
 MIT
