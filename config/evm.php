@@ -134,6 +134,12 @@ return [
          * the eth_maxPriorityFeePerGas RPC method.
          */
         'fallback_priority_fee_gwei' => '1.5',
+
+        /*
+         * Gas estimate multiplier for arbitrary contract calls (previewCall / sendCall)
+         * sent without an explicit gas limit, e.g. dApp requests over WalletConnect.
+         */
+        'call_gas_buffer' => '1.2',
     ],
 
     /*

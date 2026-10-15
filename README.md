@@ -184,6 +184,15 @@ Evm::transferToken($polygon, $usdtToken, $fromAddress, '0xRecipient', '100');
 Evm::transferFromToken($polygon, $usdtToken, $collectorAddress, '0xHolder', '0xRecipient', '100');
 ```
 
+Arbitrary transactions (native value + call data), e.g. requested by a dApp over WalletConnect
+`eth_sendTransaction`. Without a gas limit the node estimate is padded by `evm.fee.call_gas_buffer`
+(default `1.2`); a call the node says would revert comes back with `error()` instead of throwing:
+
+```php
+$preview = Evm::previewCall($polygon, $fromAddress, '0xContract', valueWei: '0', data: '0x095ea7b3...');
+$result = Evm::sendCall($polygon, $fromAddress, '0xContract', valueWei: '0', data: '0x095ea7b3...');
+```
+
 ## Sync & deposits
 
 `evm:sync` walks every active network → every wallet → every address: refreshes balances,

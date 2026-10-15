@@ -3,6 +3,7 @@
 namespace ItHealer\LaravelEvm\Api\Node;
 
 use Brick\Math\BigDecimal;
+use Brick\Math\RoundingMode;
 use Closure;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
@@ -690,6 +691,104 @@ class NodeApi
             'token_balance_before' => $tokenBalanceBefore->__toString(),
             'token_balance_after' => $tokenBalanceAfter->__toString(),
             'error' => $error,
+        ]);
+    }
+
+    /**
+     * Preview of an arbitrary transaction: native value plus call data, as requested by a dApp
+     * (WalletConnect eth_sendTransaction). Without $gasLimit the node estimate is padded by
+     * `evm.fee.call_gas_buffer` (default 20%) — contract calls often need a bit more than estimated.
+     * A call the node says would revert comes back with `error` instead of throwing.
+     */
+    public function previewCall(
+        string $from,
+        string $to,
+        BigDecimal $valueWei,
+        string $data = '',
+        ?int $gasLimit = null,
+        ?BigDecimal $balanceBefore = null,
+    ): PreviewTransferDTO {
+        $from = Str::lower($from);
+        $to = Str::lower($to);
+        $data = $data === '' || $data === '0x' ? '' : Hex::prefix0x(Str::lower(Hex::strip0x($data)));
+        $valueWei = $valueWei->toScale(0);
+        $amount = $valueWei->withPointMovedLeft($this->nativeDecimals);
+
+        if ($balanceBefore === null) {
+            $balanceBefore = $this->getBalance($from);
+        }
+
+        $fees = $this->estimateFees();
+        [$feeAttributes] = $this->feeAttributes($fees);
+
+        $error = null;
+
+        try {
+            $gas = $gasLimit
+                ? BigDecimal::of($gasLimit)
+                : $this->gasEstimate($from, $to, $data, $valueWei)
+                    ->multipliedBy((string) config('evm.fee.call_gas_buffer', '1.2'))
+                    ->toScale(0, RoundingMode::Up);
+        } catch (\Exception $e) {
+            $gas = BigDecimal::zero();
+            $error = 'Transaction would fail: '.$e->getMessage();
+        }
+
+        $fee = $fees->effectiveGasPrice()
+            ->multipliedBy($gas)
+            ->dividedBy(BigDecimal::one()->withPointMovedRight($this->nativeDecimals), $this->nativeDecimals);
+
+        $balanceAfter = $balanceBefore->minus($fee)->minus($amount);
+
+        if ($error === null && $balanceAfter->isNegative()) {
+            $error = 'Insufficient native balance';
+        }
+
+        return PreviewTransferDTO::make([
+            'from' => $from,
+            'to' => $to,
+            'amount' => $amount->__toString(),
+            'data' => $data,
+            ...$feeAttributes,
+            'gas_limit' => $gas->__toString(),
+            'fee' => $fee->__toString(),
+            'balance_before' => $balanceBefore->__toString(),
+            'balance_after' => $balanceAfter->__toString(),
+            'error' => $error,
+        ]);
+    }
+
+    /**
+     * Sign and broadcast an arbitrary transaction (see previewCall()).
+     */
+    public function sendCall(
+        string $from,
+        string $to,
+        string $privateKey,
+        BigDecimal $valueWei,
+        string $data = '',
+        ?int $gasLimit = null,
+        ?BigDecimal $balanceBefore = null,
+    ): TransferDTO {
+        $preview = $this->previewCall($from, $to, $valueWei, $data, $gasLimit, $balanceBefore);
+        if ($preview->hasError()) {
+            throw new TransferException($preview->error());
+        }
+
+        $txid = $this->sendToChain(
+            from: $preview->from(),
+            to: $preview->to(),
+            valueWei: $valueWei->toScale(0),
+            data: $preview->data(),
+            preview: $preview,
+            privateKey: $privateKey,
+            nonce: $nonce,
+        );
+
+        return TransferDTO::make([
+            ...$preview->toArray(),
+            'txid' => $txid,
+            'nonce' => $nonce,
         ]);
     }
 

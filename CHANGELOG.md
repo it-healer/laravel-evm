@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.8.0 — 2026-10-15
+
+- Add: `Evm::previewCall()` / `Evm::sendCall()` (and `NodeApi::previewCall()` / `sendCall()`) —
+  arbitrary transactions with native value and call data, sent through the same nonce-safe path as
+  transfers. Without a gas limit the estimate is padded by `evm.fee.call_gas_buffer` (default 1.2);
+  a call that would revert returns a preview with `error` instead of throwing.
+
 ## v1.3.1 — 2026-06-15
 
 - Fix: `eth_estimateGas` failed with "cannot unmarshal hex number with leading zero digits

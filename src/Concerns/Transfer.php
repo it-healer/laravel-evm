@@ -60,6 +60,58 @@ trait Transfer
         );
     }
 
+    /**
+     * Preview of an arbitrary transaction (value + call data) from a wallet address,
+     * e.g. one requested by a dApp over WalletConnect.
+     */
+    public function previewCall(
+        EvmNetwork|int|string $network,
+        EvmAddress $from,
+        string $to,
+        BigDecimal|int|string $valueWei,
+        string $data = '',
+        ?int $gasLimit = null,
+        ?BigDecimal $balanceBefore = null,
+    ): PreviewTransferDTO {
+        $node = $this->getNode($network);
+        $node->increment('requests', 3 + ($balanceBefore === null ? 1 : 0));
+
+        return $node->api()->previewCall(
+            from: $from->address,
+            to: $to,
+            valueWei: BigDecimal::of($valueWei),
+            data: $data,
+            gasLimit: $gasLimit,
+            balanceBefore: $balanceBefore,
+        );
+    }
+
+    /**
+     * Sign and broadcast an arbitrary transaction (see previewCall()).
+     */
+    public function sendCall(
+        EvmNetwork|int|string $network,
+        EvmAddress $from,
+        string $to,
+        BigDecimal|int|string $valueWei,
+        string $data = '',
+        ?int $gasLimit = null,
+        ?BigDecimal $balanceBefore = null,
+    ): TransferDTO {
+        $node = $this->getNode($network);
+        $node->increment('requests', 5 + ($balanceBefore === null ? 1 : 0));
+
+        return $node->api()->sendCall(
+            from: $from->address,
+            to: $to,
+            privateKey: $from->private_key,
+            valueWei: BigDecimal::of($valueWei),
+            data: $data,
+            gasLimit: $gasLimit,
+            balanceBefore: $balanceBefore,
+        );
+    }
+
     public function previewTokenTransfer(
         EvmNetwork|int|string $network,
         EvmToken|string $contract,
