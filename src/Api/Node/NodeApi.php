@@ -301,6 +301,27 @@ class NodeApi
         $block = $this->getLatestBlock();
         $baseFee = Hex::toBigDecimal($block['baseFeePerGas'] ?? '0x0');
         $priorityFee = $this->maxPriorityFeePerGas();
+
+        /*
+         * Recent blocks: the next block's base fee and the median tip actually paid. Some nodes
+         * suggest a zero or stale priority fee (eth_maxPriorityFeePerGas), and such a
+         * transaction waits in the mempool for minutes. The tip is the largest of the node's
+         * suggestion, the median of the last 10 blocks and `evm.fee.min_priority_fee_gwei`.
+         */
+        [$nextBaseFee, $medianTip] = $this->recentFees();
+
+        if ($nextBaseFee !== null && $nextBaseFee->isGreaterThan($baseFee)) {
+            $baseFee = $nextBaseFee;
+        }
+
+        $minTip = BigDecimal::of((string)config('evm.fee.min_priority_fee_gwei', '0'))->withPointMovedRight(9)->toScale(0);
+
+        foreach ([$medianTip, $minTip] as $candidate) {
+            if ($candidate !== null && $candidate->isGreaterThan($priorityFee)) {
+                $priorityFee = $candidate;
+            }
+        }
+
         $multiplier = (string)config('evm.fee.base_fee_multiplier', 2);
         $maxFee = $baseFee->multipliedBy($multiplier)->plus($priorityFee)->toScale(0);
 
@@ -310,6 +331,30 @@ class NodeApi
             'max_priority_fee_per_gas' => $priorityFee->__toString(),
             'max_fee_per_gas' => $maxFee->__toString(),
         ]);
+    }
+
+    /**
+     * Next block's base fee and median priority fee (50th percentile) of the last 10 blocks
+     * from eth_feeHistory; [null, null] when the node does not support it.
+     *
+     * @return array{0: ?BigDecimal, 1: ?BigDecimal}
+     */
+    protected function recentFees(): array
+    {
+        try {
+            $history = $this->rpc('eth_feeHistory', ['0xa', 'latest', [50]]);
+        } catch (\Throwable) {
+            return [null, null];
+        }
+
+        $baseFees = (array)($history['baseFeePerGas'] ?? []);
+        $tips = array_map(fn ($reward) => Hex::toBigDecimal((string)($reward[0] ?? '0x0')), (array)($history['reward'] ?? []));
+        usort($tips, fn (BigDecimal $a, BigDecimal $b) => $a->compareTo($b));
+
+        return [
+            $baseFees === [] ? null : Hex::toBigDecimal((string)end($baseFees)),
+            $tips === [] ? null : $tips[intdiv(count($tips), 2)],
+        ];
     }
 
     public function gasEstimate(string $from, string $to, string $data = '', ?BigDecimal $valueWei = null): BigDecimal

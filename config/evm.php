@@ -136,6 +136,12 @@ return [
         'fallback_priority_fee_gwei' => '1.5',
 
         /*
+         * Minimum priority fee (in gwei). The tip is the largest of the node's suggestion,
+         * the median tip of the last 10 blocks (eth_feeHistory) and this value.
+         */
+        'min_priority_fee_gwei' => env('EVM_MIN_PRIORITY_FEE_GWEI', '0'),
+
+        /*
          * Gas estimate multiplier for arbitrary contract calls (previewCall / sendCall)
          * sent without an explicit gas limit, e.g. dApp requests over WalletConnect.
          */

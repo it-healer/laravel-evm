@@ -186,3 +186,53 @@ it('sends an ERC-20 token transfer with correct calldata', function () {
         )
         ->and($result->tokenBalanceAfter()->isEqualTo('150'))->toBeTrue();
 });
+
+/**
+ * Сеть с ответами узла о комиссиях из $overrides (fakeRpc в setupNetwork их не переопределить).
+ */
+function feeNetwork(array $overrides): array
+{
+    fakeRpc($overrides);
+
+    $network = Evm::createNetwork(11155111, 'sepolia', 'ETH');
+    Evm::createNode($network, 'test-node', 'https://rpc.test');
+    $wallet = Evm::createWallet('w', mnemonic: 'test test test test test test test test test test test junk');
+
+    return [$network, $wallet->addresses->first()];
+}
+
+it('raises the priority fee to the median of recent blocks and uses the next block base fee', function () {
+    // The node suggests a zero tip, blocks paid 0.5 gwei, and the next base fee is 1.2 gwei
+    [$network, $from] = feeNetwork([
+        'eth_maxPriorityFeePerGas' => '0x0',
+        'eth_feeHistory' => [
+            'baseFeePerGas' => ['0x3b9aca00', '0x3b9aca00', '0x47868c00'],
+            'reward' => [['0x5f5e100'], ['0x1dcd6500'], ['0x1dcd6500']],
+        ],
+    ]);
+
+    $result = Evm::transfer($network, $from, '0x3535353535353535353535353535353535353535', '0.5');
+
+    expect((string) $result->maxPriorityFeePerGas())->toBe('500000000')
+        ->and((string) $result->maxFeePerGas())->toBe('2900000000'); // 2 * 1.2 gwei + 0.5 gwei
+});
+
+it('keeps the node priority fee when it is above recent blocks', function () {
+    [$network, $from] = feeNetwork([
+        'eth_feeHistory' => ['baseFeePerGas' => ['0x3b9aca00', '0x3b9aca00'], 'reward' => [['0x1'], ['0x1']]],
+    ]);
+
+    $result = Evm::transfer($network, $from, '0x3535353535353535353535353535353535353535', '0.5');
+
+    expect((string) $result->maxPriorityFeePerGas())->toBe('100000000')
+        ->and((string) $result->maxFeePerGas())->toBe('2100000000');
+});
+
+it('applies the configured minimum priority fee', function () {
+    config(['evm.fee.min_priority_fee_gwei' => '0.3']);
+    [$network, $from] = feeNetwork(['eth_maxPriorityFeePerGas' => '0x0']);
+
+    $result = Evm::transfer($network, $from, '0x3535353535353535353535353535353535353535', '0.5');
+
+    expect((string) $result->maxPriorityFeePerGas())->toBe('300000000');
+});

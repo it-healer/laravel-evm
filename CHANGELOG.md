@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.8.1 — 2026-10-17
+
+- Fix: EIP-1559 fees no longer rely only on `eth_maxPriorityFeePerGas` — some nodes suggest a zero
+  or stale tip and the transaction waits in the mempool for minutes. The priority fee is now the
+  largest of the node's suggestion, the median tip of the last 10 blocks (`eth_feeHistory`) and
+  `evm.fee.min_priority_fee_gwei` (default 0, `EVM_MIN_PRIORITY_FEE_GWEI`); `maxFeePerGas` is based
+  on the next block's base fee when it is higher than the latest one. Nodes without
+  `eth_feeHistory` behave as before. Legacy networks are unchanged.
+
 ## v1.8.0 — 2026-10-15
 
 - Add: `Evm::previewCall()` / `Evm::sendCall()` (and `NodeApi::previewCall()` / `sendCall()`) —
