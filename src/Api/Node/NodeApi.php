@@ -306,7 +306,9 @@ class NodeApi
          * Recent blocks: the next block's base fee and the median tip actually paid. Some nodes
          * suggest a zero or stale priority fee (eth_maxPriorityFeePerGas), and such a
          * transaction waits in the mempool for minutes. The tip is the largest of the node's
-         * suggestion, the median of the last 10 blocks and `evm.fee.min_priority_fee_gwei`.
+         * suggestion, the median over the last 10 blocks of their 25th-percentile tip (a tip at
+         * least a quarter of the included transactions paid, without overpaying on spikes as the
+         * median does on Polygon) and `evm.fee.min_priority_fee_gwei`.
          */
         [$nextBaseFee, $medianTip] = $this->recentFees();
 
@@ -334,7 +336,8 @@ class NodeApi
     }
 
     /**
-     * Next block's base fee and median priority fee (50th percentile) of the last 10 blocks
+     * Next block's base fee and the median over the last 10 blocks of their 25th-percentile
+     * priority fee
      * from eth_feeHistory; [null, null] when the node does not support it.
      *
      * @return array{0: ?BigDecimal, 1: ?BigDecimal}
@@ -342,7 +345,7 @@ class NodeApi
     protected function recentFees(): array
     {
         try {
-            $history = $this->rpc('eth_feeHistory', ['0xa', 'latest', [50]]);
+            $history = $this->rpc('eth_feeHistory', ['0xa', 'latest', [25]]);
         } catch (\Throwable) {
             return [null, null];
         }

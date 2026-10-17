@@ -137,7 +137,7 @@ return [
 
         /*
          * Minimum priority fee (in gwei). The tip is the largest of the node's suggestion,
-         * the median tip of the last 10 blocks (eth_feeHistory) and this value.
+         * the recent-blocks tip (median of each of the last 10 blocks' 25th-percentile tip, eth_feeHistory) and this value.
          */
         'min_priority_fee_gwei' => env('EVM_MIN_PRIORITY_FEE_GWEI', '0'),
 

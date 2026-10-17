@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.8.2 — 2026-10-17
+
+- Change: the recent-blocks tip is the median of each block's 25th-percentile tip instead of the
+  50th — on Polygon the median swings between ~80 and ~160 gwei on spikes while a quarter of the
+  included transactions pay much less; the 25th percentile still matches what gets into blocks.
+
 ## v1.8.1 — 2026-10-17
 
 - Fix: EIP-1559 fees no longer rely only on `eth_maxPriorityFeePerGas` — some nodes suggest a zero
