@@ -1,6 +1,7 @@
 <?php
 
 use Illuminate\Support\Facades\Http;
+use ItHealer\LaravelEvm\Explorer\DTO\ExplorerTokenTransactionDTO;
 use ItHealer\LaravelEvm\Explorer\Drivers\AlchemyDriver;
 
 function alchemyDriver(): AlchemyDriver
@@ -97,4 +98,53 @@ it('passes contractAddresses filter for token queries', function () {
 
         return $params['category'] === ['erc20'] && $params['contractAddresses'] === ['0xc213'];
     });
+});
+
+it('returns native and token transfers of one combined request, each mapped by its category', function () {
+    Http::fakeSequence('polygon-mainnet.g.alchemy.com/*')
+        ->push(['jsonrpc' => '2.0', 'id' => 1, 'result' => [
+            'transfers' => [
+                alchemyTransfer(['hash' => '0xnative']),
+                alchemyTransfer([
+                    'hash' => '0xtoken',
+                    'category' => 'erc20',
+                    'asset' => 'USDT',
+                    'rawContract' => ['value' => '0x47868c0', 'address' => '0xC2132D05D31c914a87C6611C10748AEb04B58e8F', 'decimal' => '0x6'],
+                ]),
+            ],
+            'pageKey' => 'cursor-1',
+        ]])
+        ->push(['jsonrpc' => '2.0', 'id' => 1, 'result' => ['transfers' => []]])
+        ->push(['jsonrpc' => '2.0', 'id' => 1, 'result' => ['transfers' => [alchemyTransfer(['hash' => '0xout'])]]]);
+
+    $items = iterator_to_array(alchemyDriver()->getTransfers('0xabc', withTokens: true, startBlock: 100), false);
+
+    expect(array_map(fn ($i) => $i->hash(), $items))->toBe(['0xnative', '0xtoken', '0xout'])
+        ->and($items[0])->not->toBeInstanceOf(ExplorerTokenTransactionDTO::class)
+        ->and($items[0]->contractAddress())->toBeNull()
+        ->and((string)$items[0]->amount())->toBe('1.500000000000000000')
+        ->and($items[1])->toBeInstanceOf(ExplorerTokenTransactionDTO::class)
+        ->and($items[1]->contractAddress())->toBe('0xc2132d05d31c914a87c6611c10748aeb04b58e8f')
+        ->and((string)$items[1]->amount())->toBe('75.000000')
+        ->and($items[2])->not->toBeInstanceOf(ExplorerTokenTransactionDTO::class);
+
+    $bodies = collect(Http::recorded())->map(fn (array $pair) => $pair[0]->data()['params'][0])->values();
+
+    expect($bodies)->toHaveCount(3)
+        ->and($bodies[0]['category'])->toBe(['external', 'erc20'])
+        ->and($bodies[0])->not->toHaveKey('contractAddresses')
+        ->and($bodies[0]['fromBlock'])->toBe('0x64')
+        ->and($bodies[1]['pageKey'])->toBe('cursor-1')
+        ->and($bodies[2])->toHaveKey('fromAddress');
+});
+
+it('asks only for native transfers in a combined request without tokens', function () {
+    Http::fake([
+        'polygon-mainnet.g.alchemy.com/*' => Http::response(['jsonrpc' => '2.0', 'id' => 1, 'result' => ['transfers' => []]]),
+    ]);
+
+    iterator_to_array(alchemyDriver()->getTransfers('0xabc', withTokens: false));
+
+    Http::assertSent(fn ($request) => $request->data()['params'][0]['category'] === ['external']);
+    Http::assertNotSent(fn ($request) => in_array('erc20', $request->data()['params'][0]['category'], true));
 });

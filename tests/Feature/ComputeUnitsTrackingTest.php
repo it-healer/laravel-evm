@@ -17,6 +17,7 @@ function fakeCreditApis(): void
             $result = match ($request->data()['method']) {
                 'eth_blockNumber' => '0x200',
                 'eth_getBalance' => '0x1bc16d674ec80000',
+                'eth_getTransactionCount' => '0x1',
                 'eth_call' => '0x'.str_pad(dechex(75_000_000), 64, '0', STR_PAD_LEFT),
             };
 
@@ -57,10 +58,56 @@ it('meters node and explorer compute units during a sync', function () {
 
     (new AddressNetworkSync($address, $network))->run();
 
-    // node: eth_blockNumber (10) + eth_getBalance (19) + eth_call balanceOf (26) = 55
-    expect(Evm::getNode($network)->credits)->toBe(55)
-        // explorer: getAssetTransfers x4 (to/from native, to/from token) x 150 = 600
-        ->and(Evm::getExplorer($network)->credits)->toBe(600);
+    // node: eth_blockNumber (10) + eth_getBalance (19) + eth_call balanceOf (26) + eth_getTransactionCount (19) = 74
+    expect(Evm::getNode($network)->credits)->toBe(74)
+        // explorer: getAssetTransfers x2 (to/from, native and token in one request) x 150 = 300
+        ->and(Evm::getExplorer($network)->credits)->toBe(300);
+});
+
+it('asks Alchemy for native and token transfers in the same request', function () {
+    [$network, $address] = creditSetup();
+
+    (new AddressNetworkSync($address, $network))->run();
+
+    $bodies = collect(Http::recorded())
+        ->map(fn (array $pair) => $pair[0]->data())
+        ->filter(fn (array $data) => ($data['method'] ?? null) === 'alchemy_getAssetTransfers')
+        ->map(fn (array $data) => $data['params'][0])
+        ->values();
+
+    expect($bodies)->toHaveCount(2)
+        ->and($bodies[0]['category'])->toBe(['external', 'erc20'])
+        ->and($bodies[0])->toHaveKey('toAddress')
+        ->and($bodies[0])->not->toHaveKey('contractAddresses')
+        ->and($bodies[1]['category'])->toBe(['external', 'erc20'])
+        ->and($bodies[1])->toHaveKey('fromAddress');
+});
+
+it('asks Alchemy only for native transfers when the network has no active tokens', function () {
+    [$network, $address] = creditSetup();
+    $network->tokens()->update(['active' => false]);
+
+    (new AddressNetworkSync($address, $network))->run();
+
+    $categories = collect(Http::recorded())
+        ->map(fn (array $pair) => $pair[0]->data())
+        ->filter(fn (array $data) => ($data['method'] ?? null) === 'alchemy_getAssetTransfers')
+        ->map(fn (array $data) => $data['params'][0]['category'])
+        ->unique()
+        ->values()
+        ->all();
+
+    expect($categories)->toBe([['external']]);
+});
+
+it('spends no explorer compute units on a scheduled sync when nothing changed', function () {
+    [$network, $address] = creditSetup();
+
+    (new AddressNetworkSync($address, $network))->run();
+    $this->travel(11)->minutes(); // past the settle window
+    (new AddressNetworkSync($address->fresh(), $network))->run();
+
+    expect(Evm::getExplorer($network)->credits)->toBe(300);
 });
 
 it('does not spend a decimals() eth_call when the token decimals are known', function () {
@@ -79,8 +126,8 @@ it('halves explorer compute units when outgoing tracking is disabled', function 
 
     (new AddressNetworkSync($address, $network))->run();
 
-    // only incoming direction: getAssetTransfers x2 (native + token) x 150 = 300
-    expect(Evm::getExplorer($network)->credits)->toBe(300);
+    // only incoming direction: one getAssetTransfers (native + token) x 150 = 150
+    expect(Evm::getExplorer($network)->credits)->toBe(150);
 
     $transferCalls = 0;
     Http::assertSent(function ($request) use (&$transferCalls) {
@@ -91,7 +138,7 @@ it('halves explorer compute units when outgoing tracking is disabled', function 
         return true;
     });
 
-    expect($transferCalls)->toBe(2);
+    expect($transferCalls)->toBe(1);
 });
 
 it('resets the credits counter at the start of a new month', function () {

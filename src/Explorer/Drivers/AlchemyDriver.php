@@ -8,6 +8,7 @@ use Generator;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Http;
 use ItHealer\LaravelEvm\Api\DTOPaginator;
+use ItHealer\LaravelEvm\Explorer\Contracts\CombinedTransfersInterface;
 use ItHealer\LaravelEvm\Explorer\DTO\ExplorerTokenTransactionDTO;
 use ItHealer\LaravelEvm\Explorer\DTO\ExplorerTransactionDTO;
 use ItHealer\LaravelEvm\Services\Alchemy\ComputeUnits;
@@ -22,8 +23,11 @@ use ItHealer\LaravelEvm\Tx\Support\Hex;
  * Only successful transfers are returned, so isError is always false
  * and `confirmations` is not provided (the sync computes it from the
  * latest block number).
+ *
+ * getTransfers() asks for native and ERC-20 transfers in the same request
+ * (`category: ['external', 'erc20']`), halving the requests of a sync.
  */
-class AlchemyDriver extends BaseExplorerDriver
+class AlchemyDriver extends BaseExplorerDriver implements CombinedTransfersInterface
 {
     protected ?string $proxy;
 
@@ -88,6 +92,20 @@ class AlchemyDriver extends BaseExplorerDriver
         });
     }
 
+    public function getTransfers(
+        string $address,
+        bool $withTokens,
+        int $startBlock = 0,
+        int $perPage = 100,
+        ?Closure $onRequest = null,
+    ): DTOPaginator {
+        $categories = $withTokens ? ['external', 'erc20'] : ['external'];
+
+        return DTOPaginator::generator(function () use ($address, $categories, $startBlock, $perPage, $onRequest): Generator {
+            yield from $this->transfers($address, $categories, null, $startBlock, $perPage, $onRequest, null);
+        });
+    }
+
     public function healthCheck(): bool
     {
         try {
@@ -105,7 +123,8 @@ class AlchemyDriver extends BaseExplorerDriver
     }
 
     /**
-     * Both directions (incoming then outgoing), each cursor-paginated.
+     * Both directions (incoming then outgoing), each cursor-paginated. With `$isToken`
+     * null (several categories) every item is mapped by its own `category`.
      */
     protected function transfers(
         string $address,
@@ -114,7 +133,7 @@ class AlchemyDriver extends BaseExplorerDriver
         int $startBlock,
         int $perPage,
         ?Closure $onRequest,
-        bool $isToken,
+        ?bool $isToken,
     ): Generator {
         // Deposit detection only needs incoming (toAddress) transfers. Disabling
         // outgoing tracking halves the alchemy_getAssetTransfers requests (and CU).
@@ -152,7 +171,7 @@ class AlchemyDriver extends BaseExplorerDriver
                 $result = $this->rpc('alchemy_getAssetTransfers', [$params]);
 
                 foreach ($result['transfers'] ?? [] as $item) {
-                    yield $isToken ? $this->mapToken($item) : $this->mapNative($item);
+                    yield ($isToken ?? ($item['category'] ?? null) === 'erc20') ? $this->mapToken($item) : $this->mapNative($item);
                 }
 
                 $pageKey = $result['pageKey'] ?? null;

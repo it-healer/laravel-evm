@@ -58,6 +58,22 @@ return [
          * per address. Keep small (a few seconds) so confirmations stay fresh; 0 disables.
          */
         'block_cache_ttl' => (int)env('EVM_SYNC_BLOCK_CACHE_TTL', 0),
+
+        /*
+         * Skip the explorer (alchemy_getAssetTransfers, Etherscan txlist/tokentx) on a
+         * scheduled sync when nothing changed: the native balance, the active token
+         * balances and the nonce (one eth_getTransactionCount on the node) are the same
+         * as at the last explorer scan. Forced syncs (webhooks, manual resync) always scan.
+         *
+         * settle_seconds   — after a change, keep scanning for this long: the explorer
+         *                    indexes a new transfer with a delay.
+         * max_skip_seconds — scan at least this often anyway (0 = never force).
+         */
+        'change_detection' => [
+            'enabled' => (bool)env('EVM_SYNC_CHANGE_DETECTION', true),
+            'settle_seconds' => (int)env('EVM_SYNC_CHANGE_SETTLE_SECONDS', 600),
+            'max_skip_seconds' => (int)env('EVM_SYNC_CHANGE_MAX_SKIP_SECONDS', 21600),
+        ],
     ],
 
     /*

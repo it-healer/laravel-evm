@@ -21,6 +21,31 @@ class SpyWebhookHandler implements WebhookHandlerInterface
     }
 }
 
+/** What the fake node answers: change it to simulate a new transfer */
+class SyncChainState
+{
+    public static string $balance = '0x1bc16d674ec80000'; // 2 ETH
+
+    public static int $usdt = 75_000_000; // 75 USDT
+
+    public static int $nonce = 1;
+
+    /** false — the explorer has not indexed the transfers yet (returns nothing) */
+    public static bool $indexed = true;
+
+    /** true — the explorer answers with an API error */
+    public static bool $explorerDown = false;
+
+    public static function reset(): void
+    {
+        self::$balance = '0x1bc16d674ec80000';
+        self::$usdt = 75_000_000;
+        self::$nonce = 1;
+        self::$indexed = true;
+        self::$explorerDown = false;
+    }
+}
+
 const ADDR = '0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266';
 const USDT = '0xc2132d05d31c914a87c6611c10748aeb04b58e8f';
 
@@ -32,10 +57,12 @@ function fakeSyncApis(): void
 
             $result = match ($data['method']) {
                 'eth_blockNumber' => '0x200', // 512
-                'eth_getBalance' => '0x1bc16d674ec80000', // 2 ETH
+                'eth_getBalance' => SyncChainState::$balance,
+                'eth_getTransactionCount' => '0x'.dechex(SyncChainState::$nonce),
+                'eth_getTransactionReceipt' => ['blockNumber' => '0x1f4', 'status' => '0x1'],
                 'eth_call' => match (substr($data['params'][0]['data'], 0, 10)) {
                     '0x313ce567' => '0x'.str_pad('6', 64, '0', STR_PAD_LEFT),
-                    '0x70a08231' => '0x'.str_pad(dechex(75_000_000), 64, '0', STR_PAD_LEFT), // 75 USDT
+                    '0x70a08231' => '0x'.str_pad(dechex(SyncChainState::$usdt), 64, '0', STR_PAD_LEFT),
                 },
             };
 
@@ -46,6 +73,14 @@ function fakeSyncApis(): void
 
             if ($action === 'getapilimit') {
                 return Http::response(['status' => '1', 'message' => 'OK', 'result' => []]);
+            }
+
+            if (SyncChainState::$explorerDown) {
+                return Http::response(['status' => '0', 'message' => 'NOTOK', 'result' => 'Max rate limit reached']);
+            }
+
+            if (!SyncChainState::$indexed) {
+                return Http::response(['status' => '0', 'message' => 'No transactions found', 'result' => []]);
             }
 
             if ($action === 'txlist') {
@@ -98,6 +133,7 @@ function fakeSyncApis(): void
 function syncSetup(): array
 {
     fakeSyncApis();
+    SyncChainState::reset();
     SpyWebhookHandler::$handled = [];
     config()->set('evm.webhook_handler', SpyWebhookHandler::class);
 
@@ -271,4 +307,238 @@ it('attaches and detaches networks idempotently', function () {
     Evm::detachNetwork($wallet, $network);
     expect(Evm::hasNetwork($wallet, $network))->toBeFalse()
         ->and($network->fresh())->not->toBeNull();
+});
+
+/* ---------- Change detection: the explorer is scanned only when something changed ---------- */
+
+function explorerScans(): int
+{
+    return collect(Http::recorded())
+        ->filter(fn (array $pair) => in_array($pair[0]['action'] ?? null, ['txlist', 'tokentx'], true))
+        ->count();
+}
+
+function syncAgain($address, $network, bool $force = false): void
+{
+    (new AddressNetworkSync($address->fresh(), $network, $force))->run();
+}
+
+/** First sync, then past the settle window, so the next scheduled sync may skip */
+function settledSync($test): array
+{
+    [$network, $address] = syncSetup();
+
+    (new AddressNetworkSync($address, $network))->run();
+    $test->travel(11)->minutes();
+
+    return [$network, $address];
+}
+
+it('scans the explorer on the first sync and remembers what it scanned', function () {
+    [$network, $address] = syncSetup();
+
+    (new AddressNetworkSync($address, $network))->run();
+
+    $state = $address->balanceForNetwork($network)->fresh()->scan_state;
+
+    expect(explorerScans())->toBe(2) // txlist + tokentx
+        ->and($state['fingerprint'])->toBeString()
+        ->and($state['scanned_at'])->not->toBeNull()
+        ->and($state['settle_until'])->not->toBeNull();
+});
+
+it('skips the explorer when balances and nonce are unchanged', function () {
+    [$network, $address] = settledSync($this);
+    $before = explorerScans();
+    $syncBlock = $address->balanceForNetwork($network)->fresh()->sync_block_number;
+
+    syncAgain($address, $network);
+
+    $row = $address->balanceForNetwork($network)->fresh();
+
+    expect(explorerScans())->toBe($before)
+        // balances still refreshed from the node
+        ->and(didSyncBalance())->toBeTrue()
+        ->and($row->sync_at->isToday())->toBeTrue()
+        // the scan window is not moved, so nothing between the scans is lost
+        ->and($row->sync_block_number)->toBe($syncBlock);
+});
+
+it('scans the explorer when the native balance changed', function () {
+    [$network, $address] = settledSync($this);
+    $before = explorerScans();
+
+    SyncChainState::$balance = '0x29a2241af62c0000'; // 3 ETH
+    syncAgain($address, $network);
+
+    expect(explorerScans())->toBe($before + 2);
+});
+
+it('scans the explorer when a token balance changed', function () {
+    [$network, $address] = settledSync($this);
+    $before = explorerScans();
+
+    SyncChainState::$usdt = 100_000_000;
+    syncAgain($address, $network);
+
+    expect(explorerScans())->toBe($before + 2);
+});
+
+it('scans the explorer when the nonce changed (something was sent)', function () {
+    [$network, $address] = settledSync($this);
+    $before = explorerScans();
+
+    SyncChainState::$nonce = 2;
+    syncAgain($address, $network);
+
+    expect(explorerScans())->toBe($before + 2);
+});
+
+it('scans the explorer when a token is activated', function () {
+    [$network, $address] = settledSync($this);
+    $before = explorerScans();
+
+    $network->tokens()->create([
+        'address' => '0x3c499c542cef5e3811e1192ce70d8cc03d5c3359',
+        'name' => 'USD Coin',
+        'symbol' => 'USDC',
+        'decimals' => 6,
+    ]);
+    syncAgain($address, $network);
+
+    expect(explorerScans())->toBe($before + 2);
+});
+
+it('keeps scanning during the settle window so a transfer indexed late is still found', function () {
+    [$network, $address] = settledSync($this);
+    EvmTransaction::query()->delete();
+    EvmDeposit::query()->delete();
+    SpyWebhookHandler::$handled = [];
+
+    // the node already shows the new balance, the explorer has not indexed the transfer yet
+    SyncChainState::$balance = '0x29a2241af62c0000';
+    SyncChainState::$indexed = false;
+    syncAgain($address, $network);
+
+    expect(EvmDeposit::count())->toBe(0);
+
+    // a minute later — fingerprint unchanged, but still within the settle window
+    $this->travel(1)->minutes();
+    SyncChainState::$indexed = true;
+    syncAgain($address, $network);
+
+    expect(EvmDeposit::count())->toBe(2)
+        ->and(SpyWebhookHandler::$handled)->toHaveCount(2);
+});
+
+it('stops scanning once the settle window is over', function () {
+    [$network, $address] = settledSync($this);
+
+    SyncChainState::$balance = '0x29a2241af62c0000';
+    syncAgain($address, $network);           // change → scan, settle window opens
+
+    $this->travel(5)->minutes();
+    $before = explorerScans();
+    syncAgain($address, $network);           // within the window → scan
+    expect(explorerScans())->toBe($before + 2);
+
+    $this->travel(6)->minutes();             // 11 minutes after the change
+    $before = explorerScans();
+    syncAgain($address, $network);           // window closed, nothing changed → skip
+    expect(explorerScans())->toBe($before);
+});
+
+it('does not extend the settle window while nothing changes', function () {
+    [$network, $address] = settledSync($this);
+
+    SyncChainState::$balance = '0x29a2241af62c0000';
+    syncAgain($address, $network);
+    $settleUntil = $address->balanceForNetwork($network)->fresh()->scan_state['settle_until'];
+
+    $this->travel(3)->minutes();
+    syncAgain($address, $network);
+
+    expect($address->balanceForNetwork($network)->fresh()->scan_state['settle_until'])->toBe($settleUntil);
+});
+
+it('scans the explorer at least every max_skip_seconds as a safety net', function () {
+    config()->set('evm.sync.change_detection.max_skip_seconds', 3600);
+    [$network, $address] = settledSync($this);
+
+    $this->travel(30)->minutes();
+    $before = explorerScans();
+    syncAgain($address, $network);
+    expect(explorerScans())->toBe($before);
+
+    $this->travel(31)->minutes();            // over an hour since the last scan
+    syncAgain($address, $network);
+    expect(explorerScans())->toBe($before + 2);
+});
+
+it('always scans the explorer on a forced sync (webhook, manual resync)', function () {
+    [$network, $address] = settledSync($this);
+    $before = explorerScans();
+
+    syncAgain($address, $network, force: true);
+
+    expect(explorerScans())->toBe($before + 2);
+});
+
+it('always scans the explorer on a full rescan from block zero', function () {
+    [$network, $address] = settledSync($this);
+    $address->balanceForNetwork($network)->update(['sync_block_number' => 0]);
+    $before = explorerScans();
+
+    syncAgain($address, $network);
+
+    expect(explorerScans())->toBe($before + 2);
+});
+
+it('scans again on the next sync when the explorer scan failed', function () {
+    [$network, $address] = syncSetup();
+    SyncChainState::$explorerDown = true;
+
+    expect(fn () => (new AddressNetworkSync($address, $network))->run())->toThrow(Exception::class);
+    expect($address->balanceForNetwork($network)->fresh()->scan_state)->toBeNull();
+
+    SyncChainState::$explorerDown = false;
+    $before = explorerScans();
+    syncAgain($address, $network);
+
+    expect(explorerScans())->toBe($before + 2)
+        ->and(EvmDeposit::count())->toBe(2);
+});
+
+it('always scans the explorer when change detection is disabled', function () {
+    config()->set('evm.sync.change_detection.enabled', false);
+    [$network, $address] = settledSync($this);
+    $before = explorerScans();
+
+    syncAgain($address, $network);
+
+    expect(explorerScans())->toBe($before + 2);
+    Http::assertNotSent(fn ($request) => ($request->data()['method'] ?? null) === 'eth_getTransactionCount');
+});
+
+it('still resolves pending outgoing transfers when the explorer is skipped', function () {
+    [$network, $address] = settledSync($this);
+
+    EvmTransaction::create([
+        'network_id' => $network->id,
+        'txid' => '0xpending',
+        'address' => $address->address,
+        'type' => 'out',
+        'time_at' => now(),
+        'from' => $address->address,
+        'to' => '0x2222222222222222222222222222222222222222',
+        'amount' => '0.1',
+        'token_address' => '',
+        'nonce' => 0, // below the confirmed nonce 1 → settled
+    ]);
+
+    $before = explorerScans();
+    syncAgain($address, $network);
+
+    expect(explorerScans())->toBe($before)
+        ->and(EvmTransaction::where('txid', '0xpending')->first()->block_number)->toBe(500);
 });

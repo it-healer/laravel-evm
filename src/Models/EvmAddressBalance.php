@@ -19,6 +19,7 @@ class EvmAddressBalance extends Model
         'balance',
         'tokens',
         'sync_block_number',
+        'scan_state',
         'sync_at',
     ];
 
@@ -30,6 +31,7 @@ class EvmAddressBalance extends Model
 
     protected $hidden = [
         'tokens',
+        'scan_state',
     ];
 
     protected function casts(): array
@@ -38,6 +40,7 @@ class EvmAddressBalance extends Model
             'balance' => BigDecimalCast::class,
             'tokens' => 'array',
             'sync_block_number' => 'integer',
+            'scan_state' => 'array',
             'sync_at' => 'datetime',
         ];
     }

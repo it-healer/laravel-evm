@@ -352,7 +352,20 @@ providers the same table is just a load weight.
 ### Reducing Alchemy CU
 
 Polling is CU-hungry because `alchemy_getAssetTransfers` costs 150 CU and runs for both
-directions on every address, every run. Options, cheapest first:
+directions on every address. Two savings are built in:
+
+- **Native and token transfers in one request.** The Alchemy explorer asks for
+  `category: ['external', 'erc20']` at once — 2 requests per sync (to/from) instead of 4.
+- **Change detection (`evm.sync.change_detection`, on by default).** A scheduled sync reads the
+  native balance, the active token balances and the nonce (`eth_getTransactionCount`, 19 CU on the
+  node) and skips the explorer when they match the last explorer scan: an incoming transfer
+  changes a balance, anything the address sends bumps the nonce. After a change the explorer is
+  scanned for `settle_seconds` more (default 600 — the explorer indexes new transfers with a
+  delay), and at least every `max_skip_seconds` anyway (default 21600, `0` = never). Forced syncs
+  (Alchemy webhooks, `force: true`) and a rescan from block 0 always query the explorer. Disable
+  with `EVM_SYNC_CHANGE_DETECTION=false`. The state lives in `evm_address_balances.scan_state`.
+
+More options, cheapest first:
 
 - **Use webhooks** instead of polling (see above) — you pay CU only when activity happens.
 - **`evm.sync.track_outgoing = false`** — detect deposits only (query just `toAddress`),

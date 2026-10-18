@@ -10,6 +10,7 @@ use Illuminate\Support\Str;
 use ItHealer\LaravelEvm\Api\Node\NodeApi;
 use ItHealer\LaravelEvm\Enums\EvmModel;
 use ItHealer\LaravelEvm\Enums\TransactionType;
+use ItHealer\LaravelEvm\Explorer\Contracts\CombinedTransfersInterface;
 use ItHealer\LaravelEvm\Explorer\Contracts\ExplorerDriverInterface;
 use ItHealer\LaravelEvm\Explorer\DTO\ExplorerTokenTransactionDTO;
 use ItHealer\LaravelEvm\Explorer\DTO\ExplorerTransactionDTO;
@@ -122,10 +123,102 @@ class AddressNetworkSync extends BaseSync
 
         $this
             ->balance()
-            ->tokenBalances()
+            ->tokenBalances();
+
+        $fingerprint = $this->fingerprint();
+
+        if ($fingerprint !== null && !$this->needsExplorerScan($fingerprint)) {
+            $this->log('Balances and nonce unchanged since the last explorer scan, skipping it.', 'success');
+            $this->reconcilePending();
+            return;
+        }
+
+        $this
             ->transactions()
+            ->rememberScan($fingerprint)
             ->reconcilePending()
             ->runWebhooks();
+    }
+
+    /**
+     * What the explorer history of the address depends on: the native balance, the
+     * balances of the active tokens and the confirmed nonce. An incoming transfer changes
+     * a balance, anything the address sends (transfer, approve, contract call) bumps the
+     * nonce. Null when change detection is disabled, so the explorer is always scanned.
+     */
+    protected function fingerprint(): ?string
+    {
+        if (!config('evm.sync.change_detection.enabled', true)) {
+            return null;
+        }
+
+        $tokens = (array)$this->balanceRow->tokens;
+        ksort($tokens);
+
+        return hash('sha256', json_encode([
+            'balance' => (string)$this->balanceRow->balance,
+            'tokens' => $tokens,
+            'nonce' => $this->nodeApi->getConfirmedNonce($this->address->address),
+        ]));
+    }
+
+    /**
+     * The explorer is scanned when forced (webhook, manual resync), on the first and on a
+     * full rescan, when the fingerprint changed since the last scan, within the settle
+     * window after a change (the explorer indexes new transfers with a delay, so the scan
+     * that noticed a change may not see the transfer yet) and at least every
+     * `max_skip_seconds` as a safety net.
+     */
+    protected function needsExplorerScan(string $fingerprint): bool
+    {
+        $state = (array)$this->balanceRow->scan_state;
+        $now = Date::now();
+
+        if ($this->force || !$this->balanceRow->sync_block_number || !isset($state['fingerprint'], $state['scanned_at'])) {
+            return true;
+        }
+
+        if (!hash_equals((string)$state['fingerprint'], $fingerprint)) {
+            return true;
+        }
+
+        if (isset($state['settle_until']) && Date::parse($state['settle_until'])->isAfter($now)) {
+            return true;
+        }
+
+        $maxSkip = (int)config('evm.sync.change_detection.max_skip_seconds', 21600);
+
+        return $maxSkip > 0 && Date::parse($state['scanned_at'])->lte($now->copy()->subSeconds($maxSkip));
+    }
+
+    /**
+     * Stores the fingerprint the explorer scan was made for. A changed fingerprint opens
+     * the settle window; an unchanged one keeps the window that is already open.
+     */
+    protected function rememberScan(?string $fingerprint): static
+    {
+        if ($fingerprint === null) {
+            return $this;
+        }
+
+        $state = (array)$this->balanceRow->scan_state;
+        $now = Date::now();
+        $settleUntil = $state['settle_until'] ?? null;
+
+        if (($state['fingerprint'] ?? null) !== $fingerprint) {
+            $settleSeconds = (int)config('evm.sync.change_detection.settle_seconds', 600);
+            $settleUntil = $now->copy()->addSeconds($settleSeconds)->toIso8601String();
+        }
+
+        $this->balanceRow->update([
+            'scan_state' => [
+                'fingerprint' => $fingerprint,
+                'scanned_at' => $now->toIso8601String(),
+                'settle_until' => $settleUntil,
+            ],
+        ]);
+
+        return $this;
     }
 
     /**
@@ -292,6 +385,60 @@ class AddressNetworkSync extends BaseSync
     {
         $startBlock = $this->balanceRow->sync_block_number ?? 0;
 
+        if ($this->explorerApi instanceof CombinedTransfersInterface) {
+            $this->combinedTransactions($startBlock);
+        } else {
+            $this->separateTransactions($startBlock);
+        }
+
+        /*
+         * Explorer indexes transactions with a delay: a transaction already mined by the
+         * node may not be returned by the explorer yet. Keep an overlap of `lag_blocks`
+         * behind the node head so the next sync re-checks recent blocks instead of
+         * skipping them forever. Re-processing is idempotent (updateOrCreate by txid).
+         */
+        $this->balanceRow->update([
+            'sync_at' => Date::now(),
+            'sync_block_number' => max(0, $this->blockNumber - $this->network->effectiveLagBlocks()),
+        ]);
+
+        return $this;
+    }
+
+    /**
+     * Native and token transfers in the same explorer requests.
+     */
+    protected function combinedTransactions(int $startBlock): void
+    {
+        /** @var ExplorerDriverInterface&CombinedTransfersInterface $explorerApi */
+        $explorerApi = $this->explorerApi;
+
+        $paginator = $explorerApi->getTransfers(
+            address: $this->address->address,
+            withTokens: count($this->tokens) > 0,
+            startBlock: $startBlock,
+            perPage: 100,
+            onRequest: $this->explorerOnRequest()
+        );
+
+        foreach ($paginator as $item) {
+            $this->checkCancelled();
+
+            if ($item instanceof ExplorerTokenTransactionDTO) {
+                $this->handleTokenTransaction($item);
+                $this->reportProgress('token_transactions');
+            } else {
+                $this->handleTransaction($item);
+                $this->reportProgress('transactions');
+            }
+        }
+    }
+
+    /**
+     * Native transfers, then token transfers, each with its own explorer requests.
+     */
+    protected function separateTransactions(int $startBlock): void
+    {
         $paginator = $this->explorerApi->getNativeTransactions(
             address: $this->address->address,
             startBlock: $startBlock,
@@ -320,19 +467,6 @@ class AddressNetworkSync extends BaseSync
                 $this->reportProgress('token_transactions');
             }
         }
-
-        /*
-         * Explorer indexes transactions with a delay: a transaction already mined by the
-         * node may not be returned by the explorer yet. Keep an overlap of `lag_blocks`
-         * behind the node head so the next sync re-checks recent blocks instead of
-         * skipping them forever. Re-processing is idempotent (updateOrCreate by txid).
-         */
-        $this->balanceRow->update([
-            'sync_at' => Date::now(),
-            'sync_block_number' => max(0, $this->blockNumber - $this->network->effectiveLagBlocks()),
-        ]);
-
-        return $this;
     }
 
     protected function handleTransaction(ExplorerTransactionDTO $transaction): void

@@ -1,5 +1,16 @@
 # Changelog
 
+## v1.9.0 — 2026-10-18
+
+- Add: change detection for scheduled syncs (`evm.sync.change_detection`, on by default). The
+  explorer is skipped when the native balance, the active token balances and the nonce are the same
+  as at the last explorer scan; after a change it keeps scanning for `settle_seconds` (600) so a
+  transfer indexed late is not lost, and scans at least every `max_skip_seconds` (21600). Forced
+  syncs and rescans from block 0 always scan. Costs one `eth_getTransactionCount` per sync on the
+  node. **New migration** (`evm_address_balances.scan_state`) — publish and run it.
+- Add: `CombinedTransfersInterface`; the Alchemy explorer returns native and ERC-20 transfers in one
+  `alchemy_getAssetTransfers` request per direction — half the explorer CU of a sync.
+
 ## v1.8.2 — 2026-10-17
 
 - Change: the recent-blocks tip is the median of each block's 25th-percentile tip instead of the
