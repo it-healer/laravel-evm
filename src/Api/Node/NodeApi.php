@@ -128,12 +128,14 @@ class NodeApi
 
     /**
      * The request did not reach the node: cURL 6 (could not resolve host), 7 (could not connect)
-     * or a timeout while resolving or connecting. A timeout after the request was sent is not one.
+     * or 28 while resolving or connecting — matched at the start of the message only. A timeout
+     * after the request was sent is not one. Even a repeated raw transaction is the same signed
+     * transaction (same nonce and txid): a second copy is rejected as already known.
      */
     public static function failedBeforeConnecting(\Throwable $e): bool
     {
         return $e instanceof \Illuminate\Http\Client\ConnectionException
-            && preg_match('/cURL error (6|7):|Resolving timed out|Connection timed out|Failed to connect|Could not resolve/i', $e->getMessage()) === 1;
+            && preg_match('/^cURL error (6|7): |^cURL error 28: (Resolving|Connection) timed out /', $e->getMessage()) === 1;
     }
 
     public function getBalance(string $address): BigDecimal

@@ -56,6 +56,11 @@ it('tells failures before connecting from the others', function (string $message
     ['cURL error 6: Could not resolve host: polygon-mainnet.g.alchemy.com', true],
     ['cURL error 7: Failed to connect to x port 443 after 3 ms: Couldn\'t connect to server', true],
     ['cURL error 28: Connection timed out after 20001 milliseconds', true],
+    ['cURL error 6: Could not resolve host: rpc.test (see https://curl.se/libcurl/c/libcurl-errors.html) for https://rpc.test', true],
     ['cURL error 28: Operation timed out after 60000 milliseconds with 0 bytes received', false],
     ['cURL error 56: Recv failure: Connection reset by peer', false],
+    // the words appear, but not as the cause at the start of the message
+    ['cURL error 28: Operation timed out after 60000 ms (Connection timed out earlier)', false],
+    ['cURL error 56: CONNECT tunnel failed: Failed to connect', false],
+    ['proxy said: cURL error 7: Failed to connect', false],
 ]);

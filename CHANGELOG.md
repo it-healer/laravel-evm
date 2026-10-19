@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.9.2 — 2026-10-19
+
+- Fix: a failure is treated as «before connecting» (and repeated) only when the cURL message
+  starts with error 6 or 7, or with error 28 «Resolving/Connection timed out» — not when these
+  words appear elsewhere in the message.
+
 ## v1.9.1 — 2026-10-19
 
 - Fix: a node request failed at once when DNS did not answer in time («cURL error 28: Resolving
