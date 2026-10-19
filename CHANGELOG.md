@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.9.1 — 2026-10-19
+
+- Fix: a node request failed at once when DNS did not answer in time («cURL error 28: Resolving
+  timed out after 10000 milliseconds» — the default 10 s connect timeout of the HTTP client). Now
+  the connect timeout is `evm.http.connect_timeout` (20 s), and a request that failed before the
+  connection was made (DNS timeout, host unreachable) is repeated `evm.http.retries` (2) times —
+  the node never got it, so even a raw transaction is safe to send again. A timeout after the
+  request was sent is not repeated.
+
 ## v1.9.0 — 2026-10-18
 
 - Add: change detection for scheduled syncs (`evm.sync.change_detection`, on by default). The

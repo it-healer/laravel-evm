@@ -87,6 +87,15 @@ class NodeApi
     {
         $client = Http::asJson()
             ->acceptJson()
+            ->connectTimeout((int)config('evm.http.connect_timeout', 20))
+            // A failure before the connection is made (DNS did not answer, host unreachable) means
+            // the node never got the request, so it is safe to repeat — sending a transaction too
+            ->retry(
+                max(1, 1 + (int)config('evm.http.retries', 2)),
+                (int)config('evm.http.retry_sleep_ms', 500),
+                fn (\Throwable $e) => self::failedBeforeConnecting($e),
+                false,
+            )
             ->withOptions([
                 'base_uri' => $this->baseURL,
                 'timeout' => 60,
@@ -115,6 +124,16 @@ class NodeApi
         }
 
         return $result['result'];
+    }
+
+    /**
+     * The request did not reach the node: cURL 6 (could not resolve host), 7 (could not connect)
+     * or a timeout while resolving or connecting. A timeout after the request was sent is not one.
+     */
+    public static function failedBeforeConnecting(\Throwable $e): bool
+    {
+        return $e instanceof \Illuminate\Http\Client\ConnectionException
+            && preg_match('/cURL error (6|7):|Resolving timed out|Connection timed out|Failed to connect|Could not resolve/i', $e->getMessage()) === 1;
     }
 
     public function getBalance(string $address): BigDecimal

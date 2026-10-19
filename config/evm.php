@@ -257,4 +257,14 @@ return [
         'deposit' => \ItHealer\LaravelEvm\Models\EvmDeposit::class,
         'alchemy_webhook' => \ItHealer\LaravelEvm\Models\EvmAlchemyWebhook::class,
     ],
+
+    /*
+     * HTTP to nodes: time to resolve and connect, and how many times a request is repeated when
+     * it failed before reaching the node (DNS did not answer, host unreachable) — safe to repeat.
+     */
+    'http' => [
+        'connect_timeout' => (int)env('EVM_HTTP_CONNECT_TIMEOUT', 20),
+        'retries' => (int)env('EVM_HTTP_RETRIES', 2),
+        'retry_sleep_ms' => 500,
+    ],
 ];
