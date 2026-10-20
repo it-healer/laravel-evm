@@ -12,6 +12,7 @@ use ItHealer\LaravelEvm\Enums\EvmModel;
 use ItHealer\LaravelEvm\Enums\TransactionType;
 use ItHealer\LaravelEvm\Explorer\Contracts\CombinedTransfersInterface;
 use ItHealer\LaravelEvm\Explorer\Contracts\ExplorerDriverInterface;
+use ItHealer\LaravelEvm\Explorer\Contracts\InternalTransfersInterface;
 use ItHealer\LaravelEvm\Explorer\DTO\ExplorerTokenTransactionDTO;
 use ItHealer\LaravelEvm\Explorer\DTO\ExplorerTransactionDTO;
 use ItHealer\LaravelEvm\Facades\Evm;
@@ -45,6 +46,8 @@ class AddressNetworkSync extends BaseSync
     protected ?WebhookHandlerInterface $webhookHandler;
     /** @var array<EvmDeposit> */
     protected array $webhooks = [];
+    /** @var array<ExplorerTransactionDTO> internal transfers of the current scan */
+    protected array $internalTransfers = [];
     protected int $blockNumber;
 
     public function __construct(
@@ -96,13 +99,14 @@ class AddressNetworkSync extends BaseSync
     /**
      * Counts an explorer request and the Compute Units it costs.
      */
-    protected function explorerOnRequest(): Closure
+    protected function explorerOnRequest(?EvmExplorer $explorer = null, ?ExplorerDriverInterface $api = null): Closure
     {
-        $credits = $this->explorerApi->creditsPerRequest();
+        $explorer ??= $this->explorer;
+        $credits = ($api ?? $this->explorerApi)->creditsPerRequest();
 
-        return function () use ($credits): void {
-            $this->explorer->increment('requests');
-            $this->explorer->recordCredits($credits);
+        return function () use ($explorer, $credits): void {
+            $explorer->increment('requests');
+            $explorer->recordCredits($credits);
         };
     }
 
@@ -384,12 +388,18 @@ class AddressNetworkSync extends BaseSync
     protected function transactions(): static
     {
         $startBlock = $this->balanceRow->sync_block_number ?? 0;
+        $this->internalTransfers = [];
+
+        // Read first: a failed request leaves nothing half-written and the next sync retries
+        $this->fetchSeparateInternalTransfers($startBlock);
 
         if ($this->explorerApi instanceof CombinedTransfersInterface) {
             $this->combinedTransactions($startBlock);
         } else {
             $this->separateTransactions($startBlock);
         }
+
+        $this->storeInternalTransfers();
 
         /*
          * Explorer indexes transactions with a delay: a transaction already mined by the
@@ -427,6 +437,8 @@ class AddressNetworkSync extends BaseSync
             if ($item instanceof ExplorerTokenTransactionDTO) {
                 $this->handleTokenTransaction($item);
                 $this->reportProgress('token_transactions');
+            } elseif ($item->isInternal()) {
+                $this->internalTransfers[] = $item;
             } else {
                 $this->handleTransaction($item);
                 $this->reportProgress('transactions');
@@ -487,6 +499,7 @@ class AddressNetworkSync extends BaseSync
             'txid' => $transaction->hash(),
             'address' => $this->address->address,
             'token_address' => '',
+            'internal' => false,
         ], [
             'type' => $type,
             'time_at' => $transaction->time(),
@@ -541,6 +554,7 @@ class AddressNetworkSync extends BaseSync
             'txid' => $transaction->hash(),
             'address' => $this->address->address,
             'token_address' => $transaction->contractAddress(),
+            'internal' => false,
         ], [
             'type' => $type,
             'time_at' => $transaction->time(),
@@ -576,6 +590,209 @@ class AddressNetworkSync extends BaseSync
 
                 $this->webhooks[] = $deposit;
             }
+        }
+    }
+
+    /**
+     * Reads internal transfers once more from `$fromBlock` (those synced before they were
+     * supported) without moving the sync cursor. Deposits found here are history: the webhook
+     * handler is only called with `$webhooks`. Returns the number of stored transfers.
+     */
+    public function backfillInternalTransfers(int $fromBlock = 0, bool $webhooks = false): int
+    {
+        // Not a run(): start the clock of the log here
+        parent::run();
+
+        $source = $this->internalTransfersSource();
+
+        if ($source === null) {
+            $this->log('No explorer of the network returns internal transfers: add an Etherscan API V2 explorer to see them.', 'warn');
+
+            return 0;
+        }
+
+        [$explorer, $api] = $source;
+        $this->internalTransfers = [];
+        $this->webhooks = [];
+
+        $paginator = $api->getInternalTransactions(
+            address: $this->address->address,
+            startBlock: $fromBlock,
+            perPage: 100,
+            onRequest: $this->explorerOnRequest($explorer, $api),
+        );
+
+        foreach ($paginator as $item) {
+            $this->checkCancelled();
+            $this->internalTransfers[] = $item;
+        }
+
+        $stored = $this->storeInternalTransfers();
+
+        if ($webhooks) {
+            $this->runWebhooks();
+        }
+
+        $this->webhooks = [];
+
+        return $stored;
+    }
+
+    /**
+     * Internal transfers when the main explorer does not return them with the other transfers:
+     * from the explorer itself (Etherscan txlistinternal) or from another explorer of the
+     * network that knows them (an Alchemy network outside the chains Alchemy indexes them on).
+     */
+    protected function fetchSeparateInternalTransfers(int $startBlock): void
+    {
+        if (!config('evm.sync.internal_transfers.enabled', true)) {
+            return;
+        }
+
+        if ($this->explorerApi instanceof CombinedTransfersInterface && $this->explorerApi->combinesInternalTransfers()) {
+            return;
+        }
+
+        $source = $this->internalTransfersSource();
+
+        if ($source === null) {
+            $this->log('No explorer of the network returns internal transfers: add an Etherscan API V2 explorer to see them.', 'warn');
+
+            return;
+        }
+
+        [$explorer, $api] = $source;
+
+        $paginator = $api->getInternalTransactions(
+            address: $this->address->address,
+            startBlock: $startBlock,
+            perPage: 100,
+            onRequest: $this->explorerOnRequest($explorer, $api),
+        );
+
+        foreach ($paginator as $item) {
+            $this->checkCancelled();
+            $this->internalTransfers[] = $item;
+        }
+    }
+
+    /**
+     * @return array{0: EvmExplorer, 1: ExplorerDriverInterface&InternalTransfersInterface}|null
+     */
+    protected function internalTransfersSource(): ?array
+    {
+        if ($this->explorerApi instanceof InternalTransfersInterface && $this->explorerApi->supportsInternalTransfers()) {
+            return [$this->explorer, $this->explorerApi];
+        }
+
+        $others = $this->network->explorers()
+            ->where('worked', '=', true)
+            ->where('available', '=', true)
+            ->whereKeyNot($this->explorer->getKey())
+            ->orderByCredits()
+            ->orderBy('requests')
+            ->get();
+
+        foreach ($others as $explorer) {
+            $api = $explorer->api();
+
+            if ($api instanceof InternalTransfersInterface && $api->supportsInternalTransfers()) {
+                return [$explorer, $api];
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * One row per transaction and direction: a transaction may send the address several
+     * internal transfers, they are summed. Failed calls, zero values and contract
+     * creations are not transfers.
+     */
+    protected function storeInternalTransfers(): int
+    {
+        $own = Str::lower($this->address->address);
+        $groups = [];
+
+        foreach ($this->internalTransfers as $item) {
+            if ($item->isError() || $item->contractAddress() || !$item->amount()->isPositive()) {
+                continue;
+            }
+
+            $type = match ($own) {
+                $item->to() => TransactionType::INCOMING,
+                $item->from() => TransactionType::OUTGOING,
+                default => null,
+            };
+
+            if ($type === null) {
+                continue;
+            }
+
+            $key = $item->hash().'|'.$type->value;
+
+            if (isset($groups[$key])) {
+                $groups[$key]['amount'] = $groups[$key]['amount']->plus($item->amount());
+            } else {
+                $groups[$key] = ['type' => $type, 'item' => $item, 'amount' => $item->amount()];
+            }
+        }
+
+        foreach ($groups as $group) {
+            $this->handleInternalTransfer($group['item'], $group['type'], $group['amount']);
+            $this->reportProgress('internal_transactions');
+        }
+
+        $this->internalTransfers = [];
+
+        return count($groups);
+    }
+
+    protected function handleInternalTransfer(ExplorerTransactionDTO $transaction, TransactionType $type, \Brick\Math\BigDecimal $amount): void
+    {
+        /** @var class-string<\ItHealer\LaravelEvm\Models\EvmTransaction> $transactionModel */
+        $transactionModel = Evm::getModel(EvmModel::Transaction);
+
+        $transactionModel::updateOrCreate([
+            'network_id' => $this->network->id,
+            'txid' => $transaction->hash(),
+            'address' => $this->address->address,
+            'token_address' => '',
+            'internal' => true,
+        ], [
+            'type' => $type,
+            'time_at' => $transaction->time(),
+            'from' => $transaction->from(),
+            'to' => $transaction->to(),
+            'amount' => $amount,
+            'block_number' => $transaction->blockNumber(),
+            'data' => $transaction->toArray(),
+        ]);
+
+        if ($type !== TransactionType::INCOMING) {
+            return;
+        }
+
+        $deposit = $this->address
+            ->deposits()
+            ->updateOrCreate([
+                'network_id' => $this->network->id,
+                'txid' => $transaction->hash(),
+                'token_id' => null,
+            ], [
+                'wallet_id' => $this->address->wallet_id,
+                'amount' => $amount,
+                'block_number' => $transaction->blockNumber(),
+                'confirmations' => $this->confirmations($transaction),
+                'time_at' => $transaction->time(),
+            ]);
+
+        if ($deposit->wasRecentlyCreated) {
+            $deposit->setRelation('network', $this->network);
+            $deposit->setRelation('wallet', $this->wallet);
+            $deposit->setRelation('address', $this->address);
+
+            $this->webhooks[] = $deposit;
         }
     }
 

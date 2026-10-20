@@ -36,8 +36,16 @@ class SyncChainState
     /** true — the explorer answers with an API error */
     public static bool $explorerDown = false;
 
+    /** What txlistinternal returns */
+    public static array $internal = [];
+
+    /** true — only txlistinternal answers with an API error */
+    public static bool $internalDown = false;
+
     public static function reset(): void
     {
+        self::$internal = [];
+        self::$internalDown = false;
         self::$balance = '0x1bc16d674ec80000';
         self::$usdt = 75_000_000;
         self::$nonce = 1;
@@ -81,6 +89,16 @@ function fakeSyncApis(): void
 
             if (!SyncChainState::$indexed) {
                 return Http::response(['status' => '0', 'message' => 'No transactions found', 'result' => []]);
+            }
+
+            if ($action === 'txlistinternal') {
+                if (SyncChainState::$internalDown) {
+                    return Http::response(['status' => '0', 'message' => 'NOTOK', 'result' => 'Max rate limit reached']);
+                }
+
+                return SyncChainState::$internal === []
+                    ? Http::response(['status' => '0', 'message' => 'No transactions found', 'result' => []])
+                    : Http::response(['status' => '1', 'message' => 'OK', 'result' => SyncChainState::$internal]);
             }
 
             if ($action === 'txlist') {
@@ -541,4 +559,203 @@ it('still resolves pending outgoing transfers when the explorer is skipped', fun
 
     expect(explorerScans())->toBe($before)
         ->and(EvmTransaction::where('txid', '0xpending')->first()->block_number)->toBe(500);
+});
+
+function internalTransfer(array $overrides = []): array
+{
+    return [
+        'hash' => '0xbridge',
+        'blockNumber' => '130',
+        'timeStamp' => '1700002000',
+        'from' => '0x394767c0000000000000000000000000000bc5f6',
+        'to' => ADDR,
+        'value' => '3000000000000000000', // 3
+        'contractAddress' => '',
+        'type' => 'call',
+        'traceId' => '0_1',
+        'isError' => '0',
+        ...$overrides,
+    ];
+}
+
+it('records an internal transfer (a bridge) as an incoming transaction and deposit', function () {
+    [$network, $address] = syncSetup();
+    SyncChainState::$internal = [internalTransfer()];
+
+    (new AddressNetworkSync($address, $network))->run();
+
+    $row = EvmTransaction::where('txid', '0xbridge')->sole();
+    $deposit = EvmDeposit::where('txid', '0xbridge')->sole();
+
+    expect($row->internal)->toBeTrue()
+        ->and($row->type->value)->toBe('in')
+        ->and($row->from)->toBe('0x394767c0000000000000000000000000000bc5f6')
+        ->and($row->amount->isEqualTo('3'))->toBeTrue()
+        ->and($row->block_number)->toBe(130)
+        ->and($deposit->token_id)->toBeNull()
+        ->and($deposit->amount->isEqualTo('3'))->toBeTrue()
+        ->and($deposit->confirmations)->toBe(512 - 130)
+        ->and(collect(SpyWebhookHandler::$handled)->pluck('txid'))->toContain('0xbridge')
+        ->and(EvmTransaction::where('internal', false)->count())->toBe(3);
+});
+
+it('sums several internal transfers of one transaction and skips failed, empty and creation calls', function () {
+    [$network, $address] = syncSetup();
+    SyncChainState::$internal = [
+        internalTransfer(['value' => '1000000000000000000', 'traceId' => '0_1']),
+        internalTransfer(['value' => '500000000000000000', 'traceId' => '0_2']),
+        internalTransfer(['hash' => '0xfailed', 'isError' => '1']),
+        internalTransfer(['hash' => '0xempty', 'value' => '0']),
+        internalTransfer(['hash' => '0xcreate', 'to' => '', 'contractAddress' => '0x5555555555555555555555555555555555555555']),
+    ];
+
+    (new AddressNetworkSync($address, $network))->run();
+
+    expect(EvmTransaction::where('internal', true)->pluck('txid')->all())->toBe(['0xbridge'])
+        ->and(EvmTransaction::where('txid', '0xbridge')->sole()->amount->isEqualTo('1.5'))->toBeTrue()
+        ->and(EvmDeposit::where('txid', '0xbridge')->sole()->amount->isEqualTo('1.5'))->toBeTrue();
+});
+
+it('keeps the outgoing call and the coin a swap returned in the same transaction', function () {
+    [$network, $address] = syncSetup();
+    // 0xnative-out is our outgoing call; the contract sends 0.2 back to us inside it
+    SyncChainState::$internal = [internalTransfer(['hash' => '0xnative-out', 'blockNumber' => '110', 'value' => '200000000000000000'])];
+
+    (new AddressNetworkSync($address, $network))->run();
+
+    $rows = EvmTransaction::where('txid', '0xnative-out')->orderBy('internal')->get();
+
+    expect($rows)->toHaveCount(2)
+        ->and($rows[0]->internal)->toBeFalse()
+        ->and($rows[0]->type->value)->toBe('out')
+        ->and($rows[1]->internal)->toBeTrue()
+        ->and($rows[1]->type->value)->toBe('in')
+        ->and($rows[1]->amount->isEqualTo('0.2'))->toBeTrue();
+});
+
+it('does not duplicate internal transfers or their webhooks on the next scan', function () {
+    [$network, $address] = syncSetup();
+    SyncChainState::$internal = [internalTransfer()];
+
+    (new AddressNetworkSync($address, $network))->run();
+    SpyWebhookHandler::$handled = [];
+    (new AddressNetworkSync($address->fresh(), $network, true))->run();
+
+    expect(EvmTransaction::where('internal', true)->count())->toBe(1)
+        ->and(EvmDeposit::where('txid', '0xbridge')->count())->toBe(1)
+        ->and(SpyWebhookHandler::$handled)->toBeEmpty();
+});
+
+it('writes nothing and retries the range when the internal transfers request fails', function () {
+    [$network, $address] = syncSetup();
+    SyncChainState::$internalDown = true;
+
+    expect(fn () => (new AddressNetworkSync($address, $network))->run())->toThrow(\Exception::class);
+
+    expect(EvmTransaction::count())->toBe(0)
+        ->and(EvmDeposit::count())->toBe(0)
+        ->and(SpyWebhookHandler::$handled)->toBeEmpty()
+        ->and($address->balanceForNetwork($network)->fresh()->sync_block_number)->toBeNull();
+
+    SyncChainState::$internalDown = false;
+    SyncChainState::$internal = [internalTransfer()];
+    (new AddressNetworkSync($address->fresh(), $network))->run();
+
+    expect(EvmTransaction::count())->toBe(4)
+        ->and(SpyWebhookHandler::$handled)->toHaveCount(3);
+});
+
+it('does not ask for internal transfers when they are disabled', function () {
+    [$network, $address] = syncSetup();
+    config()->set('evm.sync.internal_transfers.enabled', false);
+    SyncChainState::$internal = [internalTransfer()];
+
+    (new AddressNetworkSync($address, $network))->run();
+
+    expect(EvmTransaction::where('internal', true)->count())->toBe(0);
+    Http::assertNotSent(fn ($request) => ($request['action'] ?? null) === 'txlistinternal');
+});
+
+/**
+ * A network Alchemy does not index internal transfers on (BSC): Alchemy is the main explorer,
+ * Etherscan is the second one.
+ */
+function alchemyBscSetup(bool $withEtherscan): array
+{
+    fakeSyncApis();
+    Http::fake([
+        'bsc-mainnet.g.alchemy.com/*' => Http::response(['jsonrpc' => '2.0', 'id' => 1, 'result' => ['transfers' => []]]),
+    ]);
+    SyncChainState::reset();
+    SpyWebhookHandler::$handled = [];
+    config()->set('evm.webhook_handler', SpyWebhookHandler::class);
+
+    $network = Evm::createNetwork(56, 'bsc', 'BNB');
+    Evm::createNode($network, 'node', 'https://rpc.test');
+    $alchemy = Evm::createExplorer($network, ExplorerDriver::Alchemy, 'alchemy', baseURL: 'https://bsc-mainnet.g.alchemy.com/v2/KEY');
+    $etherscan = $withEtherscan ? Evm::createExplorer($network, ExplorerDriver::EtherscanV2, 'etherscan', apiKey: 'KEY') : null;
+    // the main explorer is the least used one: make it Alchemy
+    $etherscan?->update(['requests' => 1000]);
+
+    $wallet = Evm::createWallet('w', mnemonic: 'test test test test test test test test test test test junk');
+    Evm::attachNetwork($wallet, $network);
+
+    return [$network, $wallet->addresses->first(), $alchemy, $etherscan];
+}
+
+it('asks another explorer of the network for internal transfers Alchemy does not index there', function () {
+    [$network, $address, $alchemy, $etherscan] = alchemyBscSetup(withEtherscan: true);
+    SyncChainState::$internal = [internalTransfer()];
+
+    (new AddressNetworkSync($address, $network))->run();
+
+    expect(EvmTransaction::where('internal', true)->sole()->txid)->toBe('0xbridge')
+        ->and($etherscan->fresh()->requests)->toBe(1001);
+
+    Http::assertNotSent(fn ($request) => in_array('internal', $request->data()['params'][0]['category'] ?? [], true));
+    Http::assertNotSent(fn ($request) => in_array($request['action'] ?? null, ['txlist', 'tokentx'], true));
+});
+
+it('still syncs an Alchemy network without any source of internal transfers', function () {
+    [$network, $address] = alchemyBscSetup(withEtherscan: false);
+    $messages = [];
+
+    (new AddressNetworkSync($address, $network))
+        ->setLogger(function (string $message, ?string $type) use (&$messages) {
+            $messages[] = [$type, $message];
+        })
+        ->run();
+
+    expect($address->balanceForNetwork($network)->fresh()->sync_block_number)->toBe(512 - 20)
+        ->and(collect($messages)->where(0, 'warn')->pluck(1)->implode(' '))->toContain('internal transfers');
+});
+
+it('backfills internal transfers from block zero without webhooks and without moving the cursor', function () {
+    [$network, $address] = syncSetup();
+    (new AddressNetworkSync($address, $network))->run();
+    $cursor = $address->balanceForNetwork($network)->fresh()->sync_block_number;
+    SpyWebhookHandler::$handled = [];
+    SyncChainState::$internal = [internalTransfer(['blockNumber' => '5'])];
+
+    $this->artisan('evm:sync-internal')->assertSuccessful();
+
+    expect(EvmTransaction::where('internal', true)->sole()->block_number)->toBe(5)
+        ->and(EvmDeposit::where('txid', '0xbridge')->count())->toBe(1)
+        ->and(SpyWebhookHandler::$handled)->toBeEmpty()
+        ->and($address->balanceForNetwork($network)->fresh()->sync_block_number)->toBe($cursor);
+
+    Http::assertSent(fn ($request) => ($request['action'] ?? null) === 'txlistinternal' && (string)($request['startblock'] ?? '') === '0');
+
+    // Repeating changes nothing
+    $this->artisan('evm:sync-internal')->assertSuccessful();
+    expect(EvmTransaction::where('internal', true)->count())->toBe(1);
+});
+
+it('calls the webhook handler for backfilled deposits only with --webhooks', function () {
+    [$network, $address] = syncSetup();
+    SyncChainState::$internal = [internalTransfer()];
+
+    $this->artisan('evm:sync-internal', ['--webhooks' => true, '--network' => 'polygon'])->assertSuccessful();
+
+    expect(collect(SpyWebhookHandler::$handled)->pluck('txid')->all())->toBe(['0xbridge']);
 });

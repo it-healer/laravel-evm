@@ -6,6 +6,7 @@ use ItHealer\LaravelEvm\Console\Commands\AddressSyncCommand;
 use ItHealer\LaravelEvm\Console\Commands\AlchemyReconcileCommand;
 use ItHealer\LaravelEvm\Console\Commands\AlchemySetupCommand;
 use ItHealer\LaravelEvm\Console\Commands\ConfirmDepositsCommand;
+use ItHealer\LaravelEvm\Console\Commands\SyncInternalTransfersCommand;
 use ItHealer\LaravelEvm\Console\Commands\EvmSyncCommand;
 use ItHealer\LaravelEvm\Console\Commands\ExplorerSyncCommand;
 use ItHealer\LaravelEvm\Console\Commands\NetworkSyncCommand;
@@ -36,6 +37,7 @@ class EvmServiceProvider extends PackageServiceProvider
                 AlchemySetupCommand::class,
                 AlchemyReconcileCommand::class,
                 ConfirmDepositsCommand::class,
+                SyncInternalTransfersCommand::class,
             )
             ->discoversMigrations()
             ->hasInstallCommand(function (InstallCommand $command) {

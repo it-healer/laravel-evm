@@ -75,11 +75,12 @@ it('asks Alchemy for native and token transfers in the same request', function (
         ->map(fn (array $data) => $data['params'][0])
         ->values();
 
+    // Polygon: Alchemy indexes internal transfers, they come in the same request
     expect($bodies)->toHaveCount(2)
-        ->and($bodies[0]['category'])->toBe(['external', 'erc20'])
+        ->and($bodies[0]['category'])->toBe(['external', 'erc20', 'internal'])
         ->and($bodies[0])->toHaveKey('toAddress')
         ->and($bodies[0])->not->toHaveKey('contractAddresses')
-        ->and($bodies[1]['category'])->toBe(['external', 'erc20'])
+        ->and($bodies[1]['category'])->toBe(['external', 'erc20', 'internal'])
         ->and($bodies[1])->toHaveKey('fromAddress');
 });
 
@@ -97,7 +98,7 @@ it('asks Alchemy only for native transfers when the network has no active tokens
         ->values()
         ->all();
 
-    expect($categories)->toBe([['external']]);
+    expect($categories)->toBe([['external', 'internal']]);
 });
 
 it('spends no explorer compute units on a scheduled sync when nothing changed', function () {

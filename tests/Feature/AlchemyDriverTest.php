@@ -148,3 +148,58 @@ it('asks only for native transfers in a combined request without tokens', functi
     Http::assertSent(fn ($request) => $request->data()['params'][0]['category'] === ['external']);
     Http::assertNotSent(fn ($request) => in_array('erc20', $request->data()['params'][0]['category'], true));
 });
+
+it('asks for internal transfers in the combined request where Alchemy indexes them', function (int $chainId, bool $supported) {
+    Http::fake([
+        '*.g.alchemy.com/*' => Http::response(['jsonrpc' => '2.0', 'id' => 1, 'result' => ['transfers' => [
+            alchemyTransfer(['hash' => '0xbridge', 'category' => 'internal', 'uniqueId' => '0xbridge:internal:0']),
+            alchemyTransfer(['hash' => '0xplain']),
+        ]]]),
+    ]);
+
+    $driver = new AlchemyDriver('https://x.g.alchemy.com/v2/KEY', chainId: $chainId);
+    $items = iterator_to_array($driver->getTransfers('0xabc', withTokens: true), false);
+
+    expect($driver->supportsInternalTransfers())->toBe($supported)
+        ->and($driver->combinesInternalTransfers())->toBe($supported)
+        ->and($items[0]->isInternal())->toBeTrue()
+        ->and($items[1]->isInternal())->toBeFalse();
+
+    $categories = collect(Http::recorded())->map(fn (array $pair) => $pair[0]->data()['params'][0]['category'])->unique()->values()->all();
+
+    expect($categories)->toBe([$supported ? ['external', 'erc20', 'internal'] : ['external', 'erc20']]);
+})->with([
+    'ethereum' => [1, true],
+    'polygon' => [137, true],
+    'bsc' => [56, false],
+    'base' => [8453, false],
+]);
+
+it('does not combine internal transfers when they are disabled', function () {
+    config()->set('evm.sync.internal_transfers.enabled', false);
+
+    $driver = new AlchemyDriver('https://x.g.alchemy.com/v2/KEY', chainId: 137);
+
+    expect($driver->supportsInternalTransfers())->toBeTrue()
+        ->and($driver->combinesInternalTransfers())->toBeFalse();
+});
+
+it('reads only internal transfers and sends nothing on a chain without them', function () {
+    Http::fake([
+        '*.g.alchemy.com/*' => Http::response(['jsonrpc' => '2.0', 'id' => 1, 'result' => ['transfers' => [
+            alchemyTransfer(['hash' => '0xbridge', 'category' => 'internal']),
+        ]]]),
+    ]);
+
+    $polygon = iterator_to_array((new AlchemyDriver('https://x.g.alchemy.com/v2/KEY', chainId: 137))->getInternalTransactions('0xabc'), false);
+
+    expect($polygon)->toHaveCount(2) // to and from the address
+        ->and($polygon[0]->isInternal())->toBeTrue();
+    Http::assertSent(fn ($request) => $request->data()['params'][0]['category'] === ['internal']);
+
+    $before = count(Http::recorded());
+    $bsc = iterator_to_array((new AlchemyDriver('https://x.g.alchemy.com/v2/KEY', chainId: 56))->getInternalTransactions('0xabc'), false);
+
+    expect($bsc)->toBe([])
+        ->and(count(Http::recorded()))->toBe($before);
+});

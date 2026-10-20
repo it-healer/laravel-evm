@@ -9,6 +9,7 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Http;
 use ItHealer\LaravelEvm\Api\DTOPaginator;
 use ItHealer\LaravelEvm\Explorer\Contracts\CombinedTransfersInterface;
+use ItHealer\LaravelEvm\Explorer\Contracts\InternalTransfersInterface;
 use ItHealer\LaravelEvm\Explorer\DTO\ExplorerTokenTransactionDTO;
 use ItHealer\LaravelEvm\Explorer\DTO\ExplorerTransactionDTO;
 use ItHealer\LaravelEvm\Services\Alchemy\ComputeUnits;
@@ -25,9 +26,11 @@ use ItHealer\LaravelEvm\Tx\Support\Hex;
  * latest block number).
  *
  * getTransfers() asks for native and ERC-20 transfers in the same request
- * (`category: ['external', 'erc20']`), halving the requests of a sync.
+ * (`category: ['external', 'erc20']`), halving the requests of a sync. Internal
+ * transfers (`internal`) are only indexed on some chains (`evm.sync.internal_transfers.
+ * alchemy_chains`: Ethereum and Polygon mainnet); there they come in the same request.
  */
-class AlchemyDriver extends BaseExplorerDriver implements CombinedTransfersInterface
+class AlchemyDriver extends BaseExplorerDriver implements CombinedTransfersInterface, InternalTransfersInterface
 {
     protected ?string $proxy;
 
@@ -35,6 +38,7 @@ class AlchemyDriver extends BaseExplorerDriver implements CombinedTransfersInter
         protected string $baseURL,
         ?string $proxy = null,
         protected int $nativeDecimals = 18,
+        protected ?int $chainId = null,
     ) {
         $this->proxy = $this->formatProxy($proxy);
     }
@@ -101,8 +105,42 @@ class AlchemyDriver extends BaseExplorerDriver implements CombinedTransfersInter
     ): DTOPaginator {
         $categories = $withTokens ? ['external', 'erc20'] : ['external'];
 
+        if ($this->combinesInternalTransfers()) {
+            $categories[] = 'internal';
+        }
+
         return DTOPaginator::generator(function () use ($address, $categories, $startBlock, $perPage, $onRequest): Generator {
             yield from $this->transfers($address, $categories, null, $startBlock, $perPage, $onRequest, null);
+        });
+    }
+
+    public function supportsInternalTransfers(): bool
+    {
+        $chains = (array)config('evm.sync.internal_transfers.alchemy_chains', [1, 137]);
+
+        return $this->chainId !== null && in_array($this->chainId, array_map('intval', $chains), true);
+    }
+
+    /**
+     * getTransfers() also returns internal transfers: the sync needs no other request for them.
+     */
+    public function combinesInternalTransfers(): bool
+    {
+        return config('evm.sync.internal_transfers.enabled', true) && $this->supportsInternalTransfers();
+    }
+
+    public function getInternalTransactions(
+        string $address,
+        int $startBlock = 0,
+        int $perPage = 100,
+        ?Closure $onRequest = null,
+    ): DTOPaginator {
+        return DTOPaginator::generator(function () use ($address, $startBlock, $perPage, $onRequest): Generator {
+            if (!$this->supportsInternalTransfers()) {
+                return;
+            }
+
+            yield from $this->transfers($address, ['internal'], null, $startBlock, $perPage, $onRequest, false);
         });
     }
 
@@ -218,6 +256,7 @@ class AlchemyDriver extends BaseExplorerDriver implements CombinedTransfersInter
         return ExplorerTransactionDTO::make([
             ...$this->baseAttributes($item, $amount),
             'contract_address' => null,
+            'internal' => ($item['category'] ?? null) === 'internal',
         ]);
     }
 

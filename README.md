@@ -230,7 +230,24 @@ evm:wallet-sync {wallet_id} [--network=]
 evm:address-sync {address_id} [--network=] [--force]
 evm:node-sync {node_id}                      # health check
 evm:explorer-sync {explorer_id}              # health check
+evm:sync-internal [--network=] [--address=] [--from-block=0] [--webhooks]  # backfill internal transfers
 ```
+
+### Internal transfers
+
+Native coin a contract sent to an address while executing a transaction (a bridge, an exchange
+withdrawal, a smart wallet, the coin of a swap) is not a transaction of the address: explorers list
+it under *Internal Transactions*. The sync records such transfers as `EvmTransaction` rows with
+`internal = true` (several transfers of one transaction are summed) and incoming ones as deposits.
+
+- Alchemy indexes them on Ethereum and Polygon mainnet (`evm.sync.internal_transfers.alchemy_chains`);
+  there they come in the same `alchemy_getAssetTransfers` request.
+- Etherscan API V2 (and Etherscan-compatible APIs) returns them with `txlistinternal`, one more
+  request per scan.
+- On an Alchemy network outside `alchemy_chains` the sync asks another explorer of the network
+  that supports them — add an Etherscan API V2 explorer to such a network.
+- `EVM_SYNC_INTERNAL_TRANSFERS=false` turns them off. Transfers synced before they were supported:
+  `evm:sync-internal` (no webhooks unless `--webhooks`).
 
 Sync services support progress/cancellation hooks (for UI-driven resyncs):
 

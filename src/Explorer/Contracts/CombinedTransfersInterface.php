@@ -28,4 +28,10 @@ interface CombinedTransfersInterface
         int $perPage = 100,
         ?Closure $onRequest = null,
     ): DTOPaginator;
+
+    /**
+     * getTransfers() also returns internal native transfers (ExplorerTransactionDTO with
+     * isInternal()), so the sync needs no separate request for them.
+     */
+    public function combinesInternalTransfers(): bool;
 }

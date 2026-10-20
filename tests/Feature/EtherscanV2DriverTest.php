@@ -118,3 +118,33 @@ it('maps token transactions with token decimals', function () {
 
     Http::assertSent(fn ($request) => $request['contractaddress'] === '0xc213');
 });
+
+it('reads internal transfers with txlistinternal and marks them internal', function () {
+    Http::fake(['api.etherscan.io/*' => Http::response(['status' => '1', 'message' => 'OK', 'result' => [
+        etherscanTx(['hash' => '0xbridge', 'value' => '2500000000000000000', 'traceId' => '0_1', 'type' => 'call']),
+        etherscanTx(['hash' => '0xfailed', 'isError' => '1']),
+    ]])]);
+
+    $driver = etherscanDriver();
+    $items = iterator_to_array($driver->getInternalTransactions('0xabc', startBlock: 77), false);
+
+    expect($driver->supportsInternalTransfers())->toBeTrue()
+        ->and($items)->toHaveCount(2)
+        ->and($items[0]->isInternal())->toBeTrue()
+        ->and($items[0]->hash())->toBe('0xbridge')
+        ->and((string)$items[0]->amount())->toBe('2.500000000000000000')
+        ->and($items[0]->confirmations())->toBeNull()
+        ->and($items[1]->isError())->toBeTrue();
+
+    Http::assertSent(fn ($request) => $request['action'] === 'txlistinternal'
+        && (int)$request['startblock'] === 77
+        && $request['chainid'] == 137);
+});
+
+it('does not mark ordinary transactions as internal', function () {
+    Http::fake(['api.etherscan.io/*' => Http::response(['status' => '1', 'message' => 'OK', 'result' => [etherscanTx()]])]);
+
+    $items = iterator_to_array(etherscanDriver()->getNativeTransactions('0xabc'), false);
+
+    expect($items[0]->isInternal())->toBeFalse();
+});

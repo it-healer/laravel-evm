@@ -28,6 +28,7 @@ class ExplorerManager
                 ),
                 proxy: $explorer->proxy ?? config('evm.proxy'),
                 nativeDecimals: $network->currency_decimals,
+                chainId: $network->chain_id,
             ),
         };
     }

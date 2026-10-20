@@ -30,6 +30,7 @@ class EvmTransaction extends Model
         'nonce',
         'dropped_at',
         'failed',
+        'internal',
         'data',
     ];
 
@@ -48,6 +49,7 @@ class EvmTransaction extends Model
             'nonce' => 'integer',
             'dropped_at' => 'datetime',
             'failed' => 'boolean',
+            'internal' => 'boolean',
             'data' => 'array',
         ];
     }

@@ -1,5 +1,26 @@
 # Changelog
 
+## v1.10.0 — 2026-10-20
+
+- Internal transfers: the native coin a contract sent to the address while executing a transaction
+  (a bridge, an exchange withdrawal, a smart wallet, the coin of a swap) is recorded as an incoming
+  transaction (`evm_transactions.internal = true`) and a deposit; webhooks are called as for any
+  deposit. Several internal transfers of one transaction are summed; failed calls, zero values and
+  contract creations are skipped.
+- Alchemy returns them on Ethereum and Polygon mainnet (`evm.sync.internal_transfers.alchemy_chains`)
+  in the same `alchemy_getAssetTransfers` request; Etherscan API V2 with one more request
+  (`txlistinternal`) per scan. On an Alchemy network without them the sync asks another explorer of
+  the network (Etherscan API V2); without one it logs a warning and syncs the rest as before.
+  `EVM_SYNC_INTERNAL_TRANSFERS=false` turns it off.
+- The internal transfers are read before anything is written: a failed request leaves the range to
+  the next sync instead of a half-written one.
+- `evm:sync-internal [--network=] [--address=] [--from-block=0] [--webhooks]` — backfill of transfers
+  synced before; does not move the sync cursor and calls no webhooks without `--webhooks`.
+- **New migration** `add_internal_to_evm_transactions_table`: the `internal` column joins the unique
+  key (a swap is our outgoing call and the coin it returned, in one transaction). Publish and run it.
+- New contract `InternalTransfersInterface`; `CombinedTransfersInterface::combinesInternalTransfers()`.
+  `AlchemyDriver` takes an optional `chainId`.
+
 ## v1.9.2 — 2026-10-19
 
 - Fix: a failure is treated as «before connecting» (and repeated) only when the cURL message

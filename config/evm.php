@@ -74,6 +74,23 @@ return [
             'settle_seconds' => (int)env('EVM_SYNC_CHANGE_SETTLE_SECONDS', 600),
             'max_skip_seconds' => (int)env('EVM_SYNC_CHANGE_MAX_SKIP_SECONDS', 21600),
         ],
+
+        /*
+         * Internal transfers: the native coin a contract sent to the address while executing
+         * a transaction (a bridge, an exchange withdrawal, a smart wallet, the coin of a swap).
+         * They are recorded as incoming transactions and deposits like ordinary transfers.
+         *
+         * Alchemy indexes them only on `alchemy_chains` (Ethereum and Polygon mainnet), where
+         * they come in the same alchemy_getAssetTransfers request at no extra cost. Etherscan
+         * (and Etherscan-compatible APIs such as Blockscout) returns them with one more
+         * request (txlistinternal) per scan. On an Alchemy network outside `alchemy_chains`
+         * the sync asks another explorer of the network that supports them — add an
+         * Etherscan API V2 explorer to such a network.
+         */
+        'internal_transfers' => [
+            'enabled' => (bool)env('EVM_SYNC_INTERNAL_TRANSFERS', true),
+            'alchemy_chains' => [1, 137],
+        ],
     ],
 
     /*

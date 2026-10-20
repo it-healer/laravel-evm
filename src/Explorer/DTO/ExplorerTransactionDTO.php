@@ -11,7 +11,7 @@ use ItHealer\LaravelEvm\Api\BaseDTO;
  * Driver-agnostic native coin transaction. Drivers normalize their raw
  * payloads into these attributes:
  *  hash, block_number, timestamp (unix), from, to, amount (decimal string),
- *  is_error (bool), confirmations (?int), contract_address (?string), raw (array)
+ *  is_error (bool), confirmations (?int), contract_address (?string), internal (bool), raw (array)
  */
 class ExplorerTransactionDTO extends BaseDTO
 {
@@ -65,6 +65,14 @@ class ExplorerTransactionDTO extends BaseDTO
     public function isError(): bool
     {
         return (bool)$this->get('is_error', false);
+    }
+
+    /**
+     * A transfer a contract made while executing the transaction (not the transaction itself).
+     */
+    public function isInternal(): bool
+    {
+        return (bool)$this->get('internal', false);
     }
 
     public function raw(): array

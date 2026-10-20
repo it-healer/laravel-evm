@@ -6,6 +6,7 @@ use Closure;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 use ItHealer\LaravelEvm\Api\DTOPaginator;
+use ItHealer\LaravelEvm\Explorer\Contracts\InternalTransfersInterface;
 use ItHealer\LaravelEvm\Explorer\DTO\ExplorerTokenTransactionDTO;
 use ItHealer\LaravelEvm\Explorer\DTO\ExplorerTransactionDTO;
 use ItHealer\LaravelEvm\Explorer\DTO\GasOracleDTO;
@@ -13,8 +14,9 @@ use ItHealer\LaravelEvm\Explorer\DTO\GasOracleDTO;
 /**
  * Etherscan API V2 (https://docs.etherscan.io/v2-migration): one API key
  * serves 60+ EVM chains, the chain is selected by the `chainid` parameter.
+ * Etherscan-compatible APIs (Blockscout `/api`) work with the same driver.
  */
-class EtherscanV2Driver extends BaseExplorerDriver
+class EtherscanV2Driver extends BaseExplorerDriver implements InternalTransfersInterface
 {
     public const DEFAULT_BASE_URL = 'https://api.etherscan.io/v2/api';
 
@@ -139,6 +141,37 @@ class EtherscanV2Driver extends BaseExplorerDriver
         }, $perPage);
     }
 
+    public function supportsInternalTransfers(): bool
+    {
+        return true;
+    }
+
+    public function getInternalTransactions(
+        string $address,
+        int $startBlock = 0,
+        int $perPage = 100,
+        ?Closure $onRequest = null,
+    ): DTOPaginator {
+        return DTOPaginator::pages(function (int $page) use ($address, $startBlock, $perPage, $onRequest) {
+            if ($onRequest) {
+                $onRequest();
+            }
+
+            $data = $this->request([
+                'module' => 'account',
+                'action' => 'txlistinternal',
+                'address' => $address,
+                'startblock' => $startBlock,
+                'endblock' => '99999999',
+                'sort' => 'asc',
+                'page' => $page,
+                'offset' => $perPage,
+            ]);
+
+            return array_map(fn (array $item) => $this->mapInternal($item), $data);
+        }, $perPage);
+    }
+
     public function healthCheck(): bool
     {
         try {
@@ -175,6 +208,27 @@ class EtherscanV2Driver extends BaseExplorerDriver
             'is_error' => (bool)($item['isError'] ?? false),
             'confirmations' => isset($item['confirmations']) ? (int)$item['confirmations'] : null,
             'contract_address' => $item['contractAddress'] ?? null,
+            'raw' => $item,
+        ]);
+    }
+
+    /**
+     * An internal transfer: `hash` is its transaction, `contractAddress` is only set when the
+     * call created a contract (not a transfer to the address).
+     */
+    protected function mapInternal(array $item): ExplorerTransactionDTO
+    {
+        return ExplorerTransactionDTO::make([
+            'hash' => $item['hash'],
+            'block_number' => (int)$item['blockNumber'],
+            'timestamp' => (int)$item['timeStamp'],
+            'from' => $item['from'],
+            'to' => $item['to'] ?? '',
+            'amount' => (string)\Brick\Math\BigDecimal::ofUnscaledValue($item['value'] ?: '0', $this->nativeDecimals),
+            'is_error' => (bool)($item['isError'] ?? false),
+            'confirmations' => null,
+            'contract_address' => $item['contractAddress'] ?? null,
+            'internal' => true,
             'raw' => $item,
         ]);
     }
