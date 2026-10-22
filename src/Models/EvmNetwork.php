@@ -18,6 +18,7 @@ class EvmNetwork extends Model
         'currency_symbol',
         'currency_decimals',
         'explorer_url',
+        'alchemy_slug',
         'tx_type',
         'confirmations_target',
         'lag_blocks',

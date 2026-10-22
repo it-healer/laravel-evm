@@ -83,6 +83,22 @@ class AlchemyUrlFactory
         return isset(self::slugs()[$chainId]);
     }
 
+    /**
+     * Alchemy slug of a network: its own (`alchemy_slug`, found or entered by the admin) or
+     * the built-in one of its chain id.
+     */
+    public static function slugFor(\ItHealer\LaravelEvm\Models\EvmNetwork $network): ?string
+    {
+        return filled($network->alchemy_slug) ? (string)$network->alchemy_slug : (self::slugs()[(int)$network->chain_id] ?? null);
+    }
+
+    public static function makeFor(\ItHealer\LaravelEvm\Models\EvmNetwork $network, string $apiKey): ?string
+    {
+        $slug = self::slugFor($network);
+
+        return $slug ? "https://{$slug}.g.alchemy.com/v2/{$apiKey}" : null;
+    }
+
     public static function make(int $chainId, string $apiKey): ?string
     {
         $slug = self::slugs()[$chainId] ?? null;

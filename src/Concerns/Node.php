@@ -2,10 +2,13 @@
 
 namespace ItHealer\LaravelEvm\Concerns;
 
+use Illuminate\Support\Facades\App;
 use ItHealer\LaravelEvm\Enums\EvmModel;
+use ItHealer\LaravelEvm\Exceptions\AlchemyNetworkNotFoundException;
 use ItHealer\LaravelEvm\Exceptions\NetworkInactiveException;
 use ItHealer\LaravelEvm\Models\EvmNetwork;
 use ItHealer\LaravelEvm\Models\EvmNode;
+use ItHealer\LaravelEvm\Services\Alchemy\AlchemySlugFinder;
 use ItHealer\LaravelEvm\Services\AlchemyUrlFactory;
 
 trait Node
@@ -46,13 +49,16 @@ trait Node
         ?string $title = null,
         ?string $proxy = null,
     ): EvmNode {
-        $baseURL = AlchemyUrlFactory::make($network->chain_id, $apiKey);
+        // Not in the built-in list: the network's own slug, or one found by asking Alchemy
+        $slug = App::make(AlchemySlugFinder::class)->find($network, $apiKey, $proxy);
 
-        if (!$baseURL) {
-            throw new \InvalidArgumentException(
-                "Alchemy does not support chain id {$network->chain_id}."
+        if ($slug === null) {
+            throw new AlchemyNetworkNotFoundException(
+                "Alchemy does not know chain id {$network->chain_id}: set the Alchemy network slug of the network or use the URL from the Alchemy dashboard."
             );
         }
+
+        $baseURL = AlchemyUrlFactory::makeFor($network, $apiKey);
 
         return $this->createNode($network, $name, $baseURL, $title, $proxy, $apiKey);
     }

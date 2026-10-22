@@ -1,5 +1,16 @@
 # Changelog
 
+## v1.11.0 — 2026-10-23
+
+- A network the built-in Alchemy list does not know works with "Use Alchemy" too:
+  `AlchemySlugFinder` guesses its URL slug from the network names (chainid.network catalog, the
+  network title and name: `{name}-mainnet`, `{name}`, testnets `-testnet` / `-sepolia`) and keeps
+  only a slug whose `eth_chainId` answers with the chain id of the network. `createAlchemyNode()`
+  uses it; nothing found — `AlchemyNetworkNotFoundException`.
+- **New migration** `add_alchemy_slug_to_evm_networks_table`: `evm_networks.alchemy_slug` — the slug
+  found or entered by the admin, preferred over the built-in list (`AlchemyUrlFactory::slugFor()`,
+  `makeFor()`). Publish and run it.
+
 ## v1.10.1 — 2026-10-22
 
 - Alchemy: Robinhood Chain (chain id 4663, `robinhood-mainnet`) for "Use Alchemy" nodes and explorers.
