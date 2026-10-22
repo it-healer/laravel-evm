@@ -28,6 +28,7 @@ class AlchemyUrlFactory
         421614 => 'arb-sepolia',
         80002 => 'polygon-amoy',
         11155420 => 'opt-sepolia',
+        4663 => 'robinhood-mainnet',
     ];
 
     /**
@@ -58,14 +59,33 @@ class AlchemyUrlFactory
         11155420 => 'OPT_SEPOLIA',
     ];
 
+    /**
+     * Built-in slugs plus `evm.alchemy.networks` (chain id => slug): a chain Alchemy added
+     * later works without a package release.
+     *
+     * @return array<int, string>
+     */
+    public static function slugs(): array
+    {
+        $extra = [];
+
+        foreach ((array)config('evm.alchemy.networks', []) as $chainId => $slug) {
+            if (is_numeric($chainId) && is_string($slug) && $slug !== '') {
+                $extra[(int)$chainId] = $slug;
+            }
+        }
+
+        return $extra + self::SLUGS;
+    }
+
     public static function supports(int $chainId): bool
     {
-        return isset(self::SLUGS[$chainId]);
+        return isset(self::slugs()[$chainId]);
     }
 
     public static function make(int $chainId, string $apiKey): ?string
     {
-        $slug = self::SLUGS[$chainId] ?? null;
+        $slug = self::slugs()[$chainId] ?? null;
 
         return $slug ? "https://{$slug}.g.alchemy.com/v2/{$apiKey}" : null;
     }

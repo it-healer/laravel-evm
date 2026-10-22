@@ -200,6 +200,13 @@ return [
      */
     'alchemy' => [
         /*
+         * Extra Alchemy networks for "Use Alchemy" nodes and explorers: chain id => the network
+         * slug of its URL (https://{slug}.g.alchemy.com/v2/KEY). Built-in ones need no entry.
+         * Example: 'networks' => [4663 => 'robinhood-mainnet'],
+         */
+        'networks' => [],
+
+        /*
          * Notify Auth Token (dashboard.alchemy.com → Webhooks → top-right "AUTH TOKEN").
          * This is NOT your RPC API key — it authorizes the Notify management API.
          */

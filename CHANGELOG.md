@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.10.1 — 2026-10-22
+
+- Alchemy: Robinhood Chain (chain id 4663, `robinhood-mainnet`) for "Use Alchemy" nodes and explorers.
+- `evm.alchemy.networks` (chain id => slug of `https://{slug}.g.alchemy.com/v2/KEY`) adds networks
+  Alchemy supports but the package does not know yet, without a release (`AlchemyUrlFactory::slugs()`).
+
 ## v1.10.0 — 2026-10-20
 
 - Internal transfers: the native coin a contract sent to the address while executing a transaction
