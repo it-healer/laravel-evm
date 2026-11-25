@@ -114,8 +114,8 @@ class AddressNetworkSync extends BaseSync
     {
         parent::run();
 
-        if (!$this->address->available) {
-            $this->log('No synchronization required, the address has not been available!', 'success');
+        if (!$this->address->isSyncable()) {
+            $this->log('No synchronization required, the address is hidden and has never been synchronized!', 'success');
             return;
         }
 

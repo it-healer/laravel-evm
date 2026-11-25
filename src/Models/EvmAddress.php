@@ -2,6 +2,7 @@
 
 namespace ItHealer\LaravelEvm\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -46,6 +47,24 @@ class EvmAddress extends Model
     public function getPasswordAttribute(): ?string
     {
         return $this->wallet->password;
+    }
+
+    /**
+     * Addresses that are synchronized and counted in the wallet balance: visible ones and hidden
+     * ones that have been synchronized before (hiding an address must not hide its money).
+     * A hidden address that has never been synchronized (e.g. a reserve created in advance) is skipped.
+     * Columns are qualified: the scope is also applied through the balances relation.
+     */
+    public function scopeSyncable(Builder $query): Builder
+    {
+        return $query->where(fn (Builder $query) => $query
+            ->where($this->qualifyColumn('available'), true)
+            ->orWhereNotNull($this->qualifyColumn('sync_at')));
+    }
+
+    public function isSyncable(): bool
+    {
+        return $this->available || $this->sync_at !== null;
     }
 
     public function wallet(): BelongsTo

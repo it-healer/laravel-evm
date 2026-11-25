@@ -26,7 +26,7 @@ class WalletNetworkSync extends BaseSync
 
         $addresses = $this->wallet
             ->addresses()
-            ->where('available', true)
+            ->syncable()
             ->get();
 
         foreach ($addresses as $address) {

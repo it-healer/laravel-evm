@@ -163,7 +163,7 @@ trait Alchemy
     }
 
     /**
-     * Addresses the package tracks in a network: available addresses of wallets
+     * Addresses the package tracks in a network: synchronized addresses (hidden ones included) of wallets
      * that have the network attached.
      *
      * @return \Illuminate\Support\Collection<int, string>
@@ -174,7 +174,7 @@ trait Alchemy
         $model = $this->getModel(EvmModel::Address);
 
         return $model::query()
-            ->where('available', true)
+            ->syncable()
             ->whereHas('wallet.networks', fn ($query) => $query->where('evm_networks.id', $network->id))
             ->pluck('address');
     }

@@ -90,7 +90,7 @@ class SyncInternalTransfersCommand extends Command
         $model = Evm::getModel(EvmModel::Address);
 
         return $model::query()
-            ->where('available', true)
+            ->syncable()
             ->when($this->option('address'), fn ($query, $id) => $query->whereKey((int)$id))
             ->whereHas('wallet.networks', fn ($query) => $query->whereKey($network->getKey()))
             ->orderBy('id')

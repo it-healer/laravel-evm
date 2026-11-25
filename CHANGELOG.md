@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.12.0 — 2026-11-25
+
+- Hidden addresses (`available = false`) keep their money in the wallet: an address that has been
+  synchronized before is still synchronized, tracked by the Alchemy webhook, and counted in
+  `balanceForNetwork()`, `tokensForNetwork()`, `availableBalanceForNetwork()` and
+  `availableTokensForNetwork()`. A hidden address that has never been synchronized (a reserve created
+  in advance) is still skipped. Scope `EvmAddress::syncable()`, `EvmAddress::isSyncable()`,
+  relation `EvmWallet::syncableBalances()`.
+
 ## v1.11.0 — 2026-10-23
 
 - A network the built-in Alchemy list does not know works with "Use Alchemy" too:

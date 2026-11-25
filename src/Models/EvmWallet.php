@@ -115,14 +115,27 @@ class EvmWallet extends Model
     }
 
     /**
+     * Balance rows of the synchronized addresses (hidden ones included, see EvmAddress::syncable()).
+     */
+    public function syncableBalances(): HasManyThrough
+    {
+        /** @var class-string<EvmAddress> $addressModel */
+        $addressModel = Evm::getModel(EvmModel::Address);
+        $address = new $addressModel;
+
+        return $this->balances()->where(fn ($query) => $query
+            ->where($address->qualifyColumn('available'), true)
+            ->orWhereNotNull($address->qualifyColumn('sync_at')));
+    }
+
+    /**
      * Total native coin balance of all wallet addresses in the given network.
      */
     public function balanceForNetwork(EvmNetwork|int $network): BigDecimal
     {
         $networkId = $network instanceof EvmNetwork ? $network->id : $network;
 
-        return $this->balances()
-            ->where('available', true)
+        return $this->syncableBalances()
             ->where('network_id', $networkId)
             ->get()
             ->reduce(
@@ -141,7 +154,7 @@ class EvmWallet extends Model
         $networkId = $network instanceof EvmNetwork ? $network->id : $network;
 
         $totals = [];
-        foreach ($this->balances()->where('available', true)->where('network_id', $networkId)->get() as $balance) {
+        foreach ($this->syncableBalances()->where('network_id', $networkId)->get() as $balance) {
             foreach ($balance->tokens ?? [] as $contract => $amount) {
                 $totals[$contract] = ($totals[$contract] ?? BigDecimal::zero())->plus($amount);
             }
@@ -158,7 +171,7 @@ class EvmWallet extends Model
     {
         $networkId = $network instanceof EvmNetwork ? $network->id : $network;
 
-        $balances = $this->balances()->where('available', true)->where('network_id', $networkId)->get();
+        $balances = $this->syncableBalances()->where('network_id', $networkId)->get();
         $pending = \ItHealer\LaravelEvm\Services\PendingBalance::forAddresses(
             $networkId,
             $balances->map(fn (EvmAddressBalance $row) => (string) $row->address?->address)->filter()->all()
@@ -184,7 +197,7 @@ class EvmWallet extends Model
     {
         $networkId = $network instanceof EvmNetwork ? $network->id : $network;
 
-        $balances = $this->balances()->where('available', true)->where('network_id', $networkId)->get();
+        $balances = $this->syncableBalances()->where('network_id', $networkId)->get();
         $pending = \ItHealer\LaravelEvm\Services\PendingBalance::forAddresses(
             $networkId,
             $balances->map(fn (EvmAddressBalance $row) => (string) $row->address?->address)->filter()->all()
