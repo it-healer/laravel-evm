@@ -1,5 +1,22 @@
 # Changelog
 
+## v1.13.0 — 2026-11-28
+
+- **Per-network activity** (`evm.touch.per_network`, `EVM_TOUCH_PER_NETWORK`): activity is kept per
+  address and network (`evm_address_balances.touch_at`) instead of on the address shared by every
+  network of the wallet, so using one network no longer makes every attached network poll at the
+  fast interval. `EvmAddress::touchNetwork($network)`, `EvmWallet::touchNetwork($network)`.
+  **New migration** `add_touch_at_to_evm_address_balances_table`. Off by default: the address
+  `touch_at` works as before.
+- **Multicall3 balances**: `WalletNetworkSync` reads the native and token balances of every address
+  due for a full sync in one `eth_call` (`aggregate3`), not one request per address and token.
+  `NodeApi::getBalancesBatch()`, `EvmNode::getBalancesBatch()`, `NodeApi::hasContract()`,
+  `Multicall3` encoder/decoder; config `evm.multicall` (`enabled`, `address`, `batch_size`). No
+  contract on the network or a failed call — balances are asked one by one as before.
+- An address skipped by the adaptive schedule makes no request: the latest block is fetched only for
+  a full synchronization (was one `eth_blockNumber` per address and run without `block_cache_ttl`).
+- `AddressNetworkSync::needsFullSync()`, `usePrefetchedBalances()`, `address()`, `tokens()`.
+
 ## v1.12.0 — 2026-11-25
 
 - Hidden addresses (`available = false`) keep their money in the wallet: an address that has been

@@ -2,6 +2,7 @@
 
 namespace ItHealer\LaravelEvm\Services\Sync;
 
+use Brick\Math\BigDecimal;
 use Closure;
 use Illuminate\Support\Facades\App;
 use Illuminate\Support\Facades\Cache;
@@ -48,7 +49,11 @@ class AddressNetworkSync extends BaseSync
     protected array $webhooks = [];
     /** @var array<ExplorerTransactionDTO> internal transfers of the current scan */
     protected array $internalTransfers = [];
-    protected int $blockNumber;
+    protected ?int $blockNumber = null;
+    /** Balances already read in one Multicall3 request for the whole wallet (WalletNetworkSync) */
+    protected ?BigDecimal $prefetchedBalance = null;
+    /** @var array<string, BigDecimal> lowercase contract => balance */
+    protected array $prefetchedTokens = [];
 
     public function __construct(
         protected EvmAddress $address,
@@ -73,8 +78,53 @@ class AddressNetworkSync extends BaseSync
 
         $webhookHandler = config('evm.webhook_handler');
         $this->webhookHandler = $webhookHandler ? App::make($webhookHandler) : null;
+    }
 
-        $this->blockNumber = $this->latestBlockNumber();
+    /**
+     * The latest block is needed only by a full synchronization (scan start, confirmations):
+     * an address skipped by the schedule does not pay for eth_blockNumber.
+     */
+    protected function blockNumber(): int
+    {
+        return $this->blockNumber ??= $this->latestBlockNumber();
+    }
+
+    /**
+     * Whether `run()` does a full synchronization (balances, then the explorer if they
+     * changed) rather than only reconciling pending transfers.
+     */
+    public function needsFullSync(): bool
+    {
+        return $this->address->isSyncable()
+            && !($this->touchEnabled && !$this->force && $this->shouldSkipBySchedule());
+    }
+
+    /**
+     * Balances read in advance (Multicall3 for all addresses of the wallet): `run()` uses
+     * them instead of one eth_getBalance and one eth_call per token. A token missing here is
+     * asked separately.
+     *
+     * @param  array<string, BigDecimal|null>  $tokens  contract => balance
+     */
+    public function usePrefetchedBalances(?BigDecimal $balance, array $tokens): static
+    {
+        $this->prefetchedBalance = $balance;
+        $this->prefetchedTokens = array_filter(array_change_key_case($tokens, CASE_LOWER), fn ($value) => $value !== null);
+
+        return $this;
+    }
+
+    public function address(): EvmAddress
+    {
+        return $this->address;
+    }
+
+    /**
+     * @return array<string, EvmToken>
+     */
+    public function tokens(): array
+    {
+        return $this->tokens;
     }
 
     /**
@@ -321,8 +371,11 @@ class AddressNetworkSync extends BaseSync
         $now = Date::now();
 
         $activeWindow = (int) config('evm.touch.waiting_seconds', 3600);
-        $isActive = ! $this->address->touch_at
-            || $this->address->touch_at >= $now->copy()->subSeconds($activeWindow);
+        // Per network (`evm.touch.per_network`): activity in one network does not make the
+        // shared address poll every other network attached to the wallet
+        $touchAt = config('evm.touch.per_network', false) ? $this->balanceRow->touch_at : $this->address->touch_at;
+        $isActive = ! $touchAt
+            || $touchAt >= $now->copy()->subSeconds($activeWindow);
 
         if ($isActive) {
             $interval = (int) config('evm.touch.fast_interval', 0);
@@ -346,12 +399,14 @@ class AddressNetworkSync extends BaseSync
         $symbol = $this->network->currency_symbol;
 
         $this->log("Starting {$symbol} Balance of address *{$this->address->address}* ...");
-        $balance = $this->node->getBalance($this->address);
+        $balance = $this->prefetchedBalance ?? $this->node->getBalance($this->address);
         $this->log("Finished {$symbol} Balance of address *{$this->address->address}*: ".$balance->__toString());
 
         $this->balanceRow->update([
             'balance' => $balance,
             'sync_at' => Date::now(),
+            // The column comes with the per-network touch migration: written only when it is on
+            ...(config('evm.touch.per_network', false) ? ['touch_at' => $this->balanceRow->touch_at ?: Date::now()] : []),
         ]);
 
         $this->address->update([
@@ -368,7 +423,7 @@ class AddressNetworkSync extends BaseSync
 
         foreach ($this->tokens as $token) {
             $this->log('Get ERC-20 Balance from contract *'.$token->address.'* started...');
-            $balance = $this->node->getBalanceOfToken($this->address, $token);
+            $balance = $this->prefetchedTokens[Str::lower($token->address)] ?? $this->node->getBalanceOfToken($this->address, $token);
             $this->log(
                 'Get ERC-20 Balance from contract *'.$token->address.'* finished: '.$balance->__toString(),
                 'success'
@@ -409,7 +464,7 @@ class AddressNetworkSync extends BaseSync
          */
         $this->balanceRow->update([
             'sync_at' => Date::now(),
-            'sync_block_number' => max(0, $this->blockNumber - $this->network->effectiveLagBlocks()),
+            'sync_block_number' => max(0, $this->blockNumber() - $this->network->effectiveLagBlocks()),
         ]);
 
         return $this;
@@ -808,7 +863,7 @@ class AddressNetworkSync extends BaseSync
             return $confirmations;
         }
 
-        return max(0, $this->blockNumber - $transaction->blockNumber());
+        return max(0, $this->blockNumber() - $transaction->blockNumber());
     }
 
     protected function runWebhooks(): static

@@ -145,6 +145,95 @@ class NodeApi
         return Hex::toBigDecimal($balanceHex, $this->nativeDecimals);
     }
 
+    /**
+     * Native and token balances of many addresses in as few eth_call as possible, through
+     * Multicall3 (`evm.multicall`). Null when Multicall3 is disabled or not deployed on the
+     * network: the caller then asks the balances one by one. A balance whose sub-call failed
+     * is null, so only that one is asked again.
+     *
+     * @param  list<string>  $addresses
+     * @param  array<string, int>  $tokens  contract => decimals
+     * @return array<string, array{native: ?BigDecimal, tokens: array<string, ?BigDecimal>}>|null keyed by lowercase address and contract
+     */
+    public function getBalancesBatch(array $addresses, array $tokens): ?array
+    {
+        $multicall = (string)config('evm.multicall.address', Multicall3::ADDRESS);
+
+        if (!config('evm.multicall.enabled', true) || $addresses === [] || !$this->hasContract($multicall)) {
+            return null;
+        }
+
+        $tokens = array_change_key_case($tokens, CASE_LOWER);
+        $calls = [];
+        $slots = [];
+
+        foreach ($addresses as $address) {
+            $address = Str::lower($address);
+            $calls[] = ['target' => $multicall, 'callData' => Multicall3::getEthBalanceCall($address)];
+            $slots[] = [$address, null];
+
+            foreach (array_keys($tokens) as $contract) {
+                $calls[] = ['target' => $contract, 'callData' => Multicall3::balanceOfCall($address)];
+                $slots[] = [$address, $contract];
+            }
+        }
+
+        $result = [];
+        $batchSize = max(1, (int)config('evm.multicall.batch_size', 150));
+
+        foreach (array_chunk($calls, $batchSize, true) as $chunk) {
+            $hex = $this->rpc('eth_call', [
+                ['to' => $multicall, 'data' => Multicall3::encodeAggregate3(array_values($chunk))],
+                'latest',
+            ]);
+
+            $decoded = Multicall3::decodeAggregate3((string)$hex);
+
+            if (count($decoded) !== count($chunk)) {
+                throw new \UnexpectedValueException('Multicall3 returned '.count($decoded).' results for '.count($chunk).' calls');
+            }
+
+            foreach (array_values(array_keys($chunk)) as $i => $index) {
+                [$address, $contract] = $slots[$index];
+                $item = $decoded[$i];
+                $value = $item['success'] && strlen($item['returnData']) === 64
+                    ? Hex::toBigDecimal($item['returnData'], $contract === null ? $this->nativeDecimals : $tokens[$contract])
+                    : null;
+
+                $result[$address] ??= ['native' => null, 'tokens' => []];
+
+                if ($contract === null) {
+                    $result[$address]['native'] = $value;
+                } else {
+                    $result[$address]['tokens'][$contract] = $value;
+                }
+            }
+        }
+
+        return $result;
+    }
+
+    /**
+     * Whether a contract is deployed at the address (Multicall3 is not on every network).
+     * Cached: a day when found, an hour when not.
+     */
+    public function hasContract(string $address): bool
+    {
+        $key = 'evm:has-contract:'.$this->chainId.':'.Str::lower($address);
+        $cached = Cache::get($key);
+
+        if ($cached !== null) {
+            return (bool)$cached;
+        }
+
+        $code = (string)$this->rpc('eth_getCode', [$address, 'latest']);
+        $exists = Hex::strip0x($code) !== '';
+
+        Cache::put($key, $exists, $exists ? 86400 : 3600);
+
+        return $exists;
+    }
+
     public function getTokenName(string $contract): ?string
     {
         $hex = $this->rpc('eth_call', [

@@ -29,6 +29,26 @@ return [
          * null = skip idle addresses entirely (legacy behavior).
          */
         'slow_interval' => null,
+
+        /*
+         * Activity is kept per address and network (evm_address_balances.touch_at) instead of
+         * on the address shared by all networks of the wallet: touch one network with
+         * EvmAddress::touchNetwork() / EvmWallet::touchNetwork(), the others stay idle.
+         * Needs the add_touch_at_to_evm_address_balances migration.
+         */
+        'per_network' => (bool)env('EVM_TOUCH_PER_NETWORK', false),
+    ],
+
+    /*
+     * Multicall3 (https://www.multicall3.com): balances of all addresses and tokens of a wallet
+     * in a network in one eth_call instead of one per address and token. Networks without the
+     * contract (checked with eth_getCode, cached) fall back to separate requests.
+     */
+    'multicall' => [
+        'enabled' => (bool)env('EVM_MULTICALL_ENABLED', true),
+        'address' => env('EVM_MULTICALL_ADDRESS', '0xcA11bde05977b3631167028862bE2a173976CA11'),
+        // Sub-calls per eth_call (a node limits the gas of one call)
+        'batch_size' => (int)env('EVM_MULTICALL_BATCH_SIZE', 150),
     ],
 
     /*

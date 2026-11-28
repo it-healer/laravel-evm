@@ -118,4 +118,35 @@ class EvmNode extends Model
 
         return $result;
     }
+
+    /**
+     * Balances of many addresses and tokens through Multicall3 (NodeApi::getBalancesBatch);
+     * null when Multicall3 is unavailable on the network.
+     *
+     * @param  iterable<EvmAddress|string>  $addresses
+     * @param  iterable<EvmToken>  $tokens
+     * @return array<string, array{native: ?BigDecimal, tokens: array<string, ?BigDecimal>}>|null
+     */
+    public function getBalancesBatch(iterable $addresses, iterable $tokens): ?array
+    {
+        $list = [];
+
+        foreach ($addresses as $address) {
+            $list[] = $address instanceof EvmAddress ? $address->address : $address;
+        }
+
+        $decimals = [];
+
+        foreach ($tokens as $token) {
+            $decimals[$token->address] = (int)$token->decimals;
+        }
+
+        $result = $this->api()->getBalancesBatch($list, $decimals);
+
+        if ($result !== null) {
+            $this->increment('requests');
+        }
+
+        return $result;
+    }
 }

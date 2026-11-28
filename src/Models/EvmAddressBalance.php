@@ -20,6 +20,7 @@ class EvmAddressBalance extends Model
         'tokens',
         'sync_block_number',
         'scan_state',
+        'touch_at',
         'sync_at',
     ];
 
@@ -42,6 +43,7 @@ class EvmAddressBalance extends Model
             'sync_block_number' => 'integer',
             'scan_state' => 'array',
             'sync_at' => 'datetime',
+            'touch_at' => 'datetime',
         ];
     }
 

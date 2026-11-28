@@ -286,6 +286,32 @@ $wallet->addresses()->update(['touch_at' => now()]);
 Defaults (`fast_interval` 0, `slow_interval` null) preserve the legacy behavior: active
 addresses sync every run, idle ones are skipped. `evm:address-sync --force` bypasses the schedule.
 
+#### Per-network activity
+
+An EVM address is shared by every network attached to its wallet, so a `touch_at` on the address
+makes **all** of them poll at the fast interval — a network nobody uses (attached "just in case")
+pays as much as the one in use. With `evm.touch.per_network` (`EVM_TOUCH_PER_NETWORK=true`, needs
+the `add_touch_at_to_evm_address_balances` migration) activity is kept per address **and network**
+(`evm_address_balances.touch_at`):
+
+```php
+$address->touchNetwork($network);   // one address in one network
+$wallet->touchNetwork($network);    // every address of the wallet in one network (2 queries)
+```
+
+Untouched networks stay on `slow_interval`. An address skipped by the schedule makes no request at
+all — the latest block is fetched only for a full synchronization.
+
+### Multicall3 balances
+
+`WalletNetworkSync` (and so `evm:sync`) reads the native and token balances of every address due
+for a full sync in **one** `eth_call` through [Multicall3](https://www.multicall3.com)
+(`aggregate3` + `getEthBalance` / `balanceOf`), instead of one `eth_getBalance` plus one `eth_call`
+per token and address: 9 addresses with 3 tokens cost 1 request instead of 36. The contract is
+looked up once with `eth_getCode` (cached a day, an hour when absent); on a network without it, or
+when the call fails, balances are asked one by one as before. A failed sub-call (an odd token) is
+asked separately. Config `evm.multicall`: `enabled`, `address`, `batch_size` (sub-calls per request).
+
 ## Real-time deposits with Alchemy webhooks
 
 Polling pays for an explorer scan of every address on every run, even when nothing happened.

@@ -103,6 +103,19 @@ class EvmAddress extends Model
      * Per-network state (native balance, token balances, sync cursor)
      * of this address. Created lazily on first access.
      */
+    /**
+     * Activity of the address in one network (`evm.touch.per_network`): only this network
+     * moves to the fast sync interval. The address touch_at is updated too, for code that
+     * reads it.
+     */
+    public function touchNetwork(EvmNetwork|int $network, ?\DateTimeInterface $at = null): void
+    {
+        $at ??= now();
+
+        $this->balanceForNetwork($network)->update(['touch_at' => $at]);
+        $this->update(['touch_at' => $at]);
+    }
+
     public function balanceForNetwork(EvmNetwork|int $network): EvmAddressBalance
     {
         $networkId = $network instanceof EvmNetwork ? $network->id : $network;

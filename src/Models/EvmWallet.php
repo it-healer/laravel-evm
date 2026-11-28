@@ -69,6 +69,40 @@ class EvmWallet extends Model
             ->withTimestamps();
     }
 
+    /**
+     * Activity of every address of the wallet in one network (`evm.touch.per_network`):
+     * two queries however many addresses, missing balance rows are created.
+     */
+    public function touchNetwork(EvmNetwork|int $network, ?\DateTimeInterface $at = null): void
+    {
+        $at ??= now();
+        $networkId = $network instanceof EvmNetwork ? $network->id : $network;
+
+        /** @var class-string<EvmAddressBalance> $balanceModel */
+        $balanceModel = Evm::getModel(EvmModel::AddressBalance);
+        $addressIds = $this->addresses()->pluck('id');
+
+        if ($addressIds->isEmpty()) {
+            return;
+        }
+
+        $existing = $balanceModel::query()
+            ->where('network_id', $networkId)
+            ->whereIn('address_id', $addressIds)
+            ->pluck('address_id');
+
+        $balanceModel::query()
+            ->where('network_id', $networkId)
+            ->whereIn('address_id', $existing)
+            ->update(['touch_at' => $at]);
+
+        foreach ($addressIds->diff($existing) as $addressId) {
+            $balanceModel::query()->create(['address_id' => $addressId, 'network_id' => $networkId, 'touch_at' => $at]);
+        }
+
+        $this->addresses()->update(['touch_at' => $at]);
+    }
+
     public function addresses(): HasMany
     {
         /** @var class-string<EvmAddress> $model */
