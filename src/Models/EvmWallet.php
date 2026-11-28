@@ -70,8 +70,9 @@ class EvmWallet extends Model
     }
 
     /**
-     * Activity of every address of the wallet in one network (`evm.touch.per_network`):
-     * two queries however many addresses, missing balance rows are created.
+     * Activity of every synchronizable address of the wallet in one network
+     * (`evm.touch.per_network`): a few queries however many addresses, missing balance rows
+     * are created.
      */
     public function touchNetwork(EvmNetwork|int $network, ?\DateTimeInterface $at = null): void
     {
@@ -80,7 +81,8 @@ class EvmWallet extends Model
 
         /** @var class-string<EvmAddressBalance> $balanceModel */
         $balanceModel = Evm::getModel(EvmModel::AddressBalance);
-        $addressIds = $this->addresses()->pluck('id');
+        // A hidden address never synchronized (a reserve) gets no row: it is not synchronized anyway
+        $addressIds = $this->addresses()->syncable()->pluck('id');
 
         if ($addressIds->isEmpty()) {
             return;
@@ -100,7 +102,7 @@ class EvmWallet extends Model
             $balanceModel::query()->create(['address_id' => $addressId, 'network_id' => $networkId, 'touch_at' => $at]);
         }
 
-        $this->addresses()->update(['touch_at' => $at]);
+        $this->addresses()->whereIn('id', $addressIds)->update(['touch_at' => $at]);
     }
 
     public function addresses(): HasMany

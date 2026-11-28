@@ -235,12 +235,16 @@ it('keeps a network idle when only another network of the wallet is used', funct
     expect(WalletSyncNode::$multicallSizes)->toBe([6]);
 });
 
-it('creates missing balance rows when a network is touched', function () {
+it('creates missing balance rows when a network is touched, but not for a never-synced hidden reserve', function () {
     [$wallet, $polygon, $optimism] = wnsSetup();
+    $reserve = Evm::createAddress($wallet);
+    $reserve->update(['available' => false, 'sync_at' => null]);
 
     $wallet->touchNetwork($optimism);
 
     expect(EvmAddressBalance::query()->where('network_id', $optimism->id)->whereNotNull('touch_at')->count())->toBe(3)
+        ->and(EvmAddressBalance::query()->where('address_id', $reserve->id)->exists())->toBeFalse()
+        ->and($reserve->fresh()->touch_at)->toBeNull()
         ->and(EvmAddressBalance::query()->where('network_id', $polygon->id)->count())->toBe(0);
 });
 

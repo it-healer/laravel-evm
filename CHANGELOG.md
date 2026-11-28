@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.13.1 — 2026-11-28
+
+- `EvmWallet::touchNetwork()` touches synchronizable addresses only: a hidden never-synchronized
+  reserve gets no balance row.
+
 ## v1.13.0 — 2026-11-28
 
 - **Per-network activity** (`evm.touch.per_network`, `EVM_TOUCH_PER_NETWORK`): activity is kept per
